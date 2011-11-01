@@ -31,14 +31,18 @@ struct arena_bhunk_hdr_s;
 #define INITIAL_CHUNK_SIZE (32 * 4 * 1024) // 128 kB
 // Maximum chunk size; maximum size given to an arena
 #define FINAL_CHUNK_SIZE (4 * 1024 * 1024) // 4MB
+// The smallest aligned size that will hold a size_t value.
+#define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
+
+
 
 // Rounds up to the nearest multiple of ALIGNMENT.
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1))
 #define ALIGNPAGE(size) (((size) + (PAGE_SIZE-1)) & ~(PAGE_SIZE-1))
 #define ALIGNCHUNK(size) (((size) + (FINAL_CHUNK_SIZE-1)) & ~(FINAL_CHUNK_SIZE-1))
 
-// size_t pointers to starts of runs of blocks should be named properly.
-typedef size_t block;
+// size_t pointers to starts of runs of objects should be named properly.
+typedef size_t object;
 
 /****************
  * Size Classes *
@@ -64,20 +68,28 @@ size_t get_small_size_class(size_t real_size) {
   assert(real_size <= MAX_SMALL_SIZE)
   // TODO: Replace with binary search, or something... good. 
   int i;
-  // In descending size order, the moment you don't fit,
-  // return the last thing you fit in.
-  for(i=NUM_SMALL_CLASSES-1; i>=0; i--) {
-    if (real_size > SMALL_CLASS_CONTAINERS[i]) 
+  // In ascending size order, look for smallest fit
+  for(i=0; i<=NUM_SIZE_CLASSES-1; i++) {
+    if (real_size <= SMALL_CLASS_CONTAINERS[i]) 
       return SMALL_CLASS_CONTAINERS[i+1];
   }
-  return SMALL_CLASS_CONTAINERS[0];
+  return MAX_SMALL_SIZE;
 }
+
+
 
 /****************
  * Arena Chunks *
  ****************/
 
+// For maintenance of a page map, the following may be handy.
+typedef enum page_state_e {FREE, SMALL_RUN_HEAD, SMALL_RUN_FRAGMENT, 
+			   LARGE_RUN_HEAD, LARGE_RUN_FRAGMENT} page_state;
+
 typedef struct arena_chunk_hdr_s {
+  // Ptr to Arena in multi-Arena case goes here
+  
+
 
 } arena_chunk_hdr;
 
@@ -86,7 +98,12 @@ typedef struct arena_chunk_hdr_s {
  **********************/
 
 typedef struct arena_bin_s {
-
+  //LOCK GOES HERE IN FUTURE
+  small_run_hdr* current_run; // Pointer to header of current run
+  tree_t available_runs; // RB tree of all runs with free space
+  size_t object_size; // Size of object stored here, e.g. 192 bytes
+  size_t run_length; // Total size of run, e.g. one page
+  size_t available_registrations; // How many objects fit in a run of length run_length
 } arena_bin;
 
 /**************
@@ -99,7 +116,7 @@ typedef struct small_run_hdr_s {
   // LOCK GOES HERE IN FUTURE
   arena_bin* parent; // Pointer to our parent bin
   block* free; // Pointer to start block of free list
-  block* avail; // Pointer to first *never-allocated* block
+  block* next; // Pointer to first *never-allocated* block
   size_t free_cells; // How many free cells remain
 } small_run_hdr;
 
