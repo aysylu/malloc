@@ -8,9 +8,10 @@
  * Prototype structs *
  *********************/
 
-struct arena_bin_hdr_s;
-struct arena_bin_s;
-struct arena_bhunk_hdr_s;
+struct small_run_hdr;
+struct large_run_hdr;
+struct arena_bin;
+struct arena_chunk_hdr;
 
 /************************
  * Memory and Alignment *
@@ -34,15 +35,21 @@ struct arena_bhunk_hdr_s;
 // The smallest aligned size that will hold a size_t value.
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
+// Header offsets, in bytes
+#define ARENA_CHUNK_HDR_SIZE (ALIGN(sizeof(arena_chunk_hdr)))
+#define ARENA_BIN_SIZE (ALIGN(sizeof(arena_bin)))
+#define LARGE_RUN_HDR_SIZE (ALIGN(sizeof(large_run_hdr)))
+#define SMALL_RUN_HDR_SIZE (ALIGN(sizeof(small_run_hdr)))
 
+#define NUM_PAGES_IN_CHUNK ((FINAL_CHUNK_SIZE - ARENA_CHUNK_HDR_SIZE) / PAGE_SIZE)
 
 // Rounds up to the nearest multiple of ALIGNMENT.
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1))
 #define ALIGNPAGE(size) (((size) + (PAGE_SIZE-1)) & ~(PAGE_SIZE-1))
 #define ALIGNCHUNK(size) (((size) + (FINAL_CHUNK_SIZE-1)) & ~(FINAL_CHUNK_SIZE-1))
 
-// size_t pointers to starts of runs of objects should be named properly.
-typedef size_t object;
+// size_t pointers to object-sized cells in a small run
+typedef size_t block;
 
 /****************
  * Size Classes *
@@ -65,11 +72,11 @@ const uint16_t SMALL_CLASS_CONTAINERS[NUM_SMALL_CLASSES] =
 // comes in before this, so checking for those sizes here
 // is not handy.
 size_t get_small_size_class(size_t real_size) {
-  assert(real_size <= MAX_SMALL_SIZE)
+  assert(real_size <= MAX_SMALL_SIZE);
   // TODO: Replace with binary search, or something... good. 
   int i;
   // In ascending size order, look for smallest fit
-  for(i=0; i<=NUM_SIZE_CLASSES-1; i++) {
+  for(i=0; i<=NUM_SMALL_CLASSES-1; i++) {
     if (real_size <= SMALL_CLASS_CONTAINERS[i]) 
       return SMALL_CLASS_CONTAINERS[i+1];
   }
@@ -77,51 +84,60 @@ size_t get_small_size_class(size_t real_size) {
 }
 
 
-
-/****************
- * Arena Chunks *
- ****************/
-
-// For maintenance of a page map, the following may be handy.
-typedef enum page_state_e {FREE, SMALL_RUN_HEAD, SMALL_RUN_FRAGMENT, 
-			   LARGE_RUN_HEAD, LARGE_RUN_FRAGMENT} page_state;
-
-typedef struct arena_chunk_hdr_s {
-  // Ptr to Arena in multi-Arena case goes here
-  
-
-
-} arena_chunk_hdr;
-
 /**********************
  * Arena Bin Metadata *
  **********************/
 
-typedef struct arena_bin_s {
+struct arena_bin {
   //LOCK GOES HERE IN FUTURE
   small_run_hdr* current_run; // Pointer to header of current run
   tree_t available_runs; // RB tree of all runs with free space
   size_t object_size; // Size of object stored here, e.g. 192 bytes
   size_t run_length; // Total size of run, e.g. one page
   size_t available_registrations; // How many objects fit in a run of length run_length
-} arena_bin;
+};
+
+
+/****************
+ * Arena Chunks *
+ ****************/
+
+// For maintenance of a page map, the following may be handy.
+enum page_state {FREE, SMALL_RUN_HEAD, SMALL_RUN_FRAGMENT, 
+		 LARGE_RUN_HEAD, LARGE_RUN_FRAGMENT};
+
+
+struct arena_chunk_hdr {
+  // Ptr to Arena in multi-Arena case goes here
+  // LOCK GOES HERE IN FUTURE
+  tree_t clean_page_runs; // For clean *whole pages* for Large allocation
+  tree_t dirty_page_runs; // For dirty *whole pages*
+  arena_bin bin_headers[NUM_SMALL_CLASSES]; // Store run metadata
+  page_state page_map[(FINAL_CHUNK_SIZE / PAGE_SIZE) - 1]; // Stores state of each page
+  // Note above - header data occupies the first free page slot.
+};
 
 /**************
  * Small Runs *
  **************/
 
 // Header entry for a small run, at the top of its page
-typedef struct small_run_hdr_s {
+struct small_run_hdr {
   node_t run_tree_node; // Allows this to be part of a rbtree of runs
   // LOCK GOES HERE IN FUTURE
   arena_bin* parent; // Pointer to our parent bin
   block* free; // Pointer to start block of free list
   block* next; // Pointer to first *never-allocated* block
   size_t free_cells; // How many free cells remain
-} small_run_hdr;
+};
 
-// Size of the header, for offsetting into blocks
-// All of these pointers should be 8 bytes anyway,
-// but this is harmless.
-#define SMALL_RUN_HDR_SIZE ALIGN(sizeof(small_run_hdr))
+/**************
+ * Large Runs *
+ **************/
+
+struct large_run_hdr {
+  node_t page_tree_node; // For storage in rb tree of whole-page runs
+  size_t num_pages; // How many consecutive pages are assigned to this run
+};
+
 
