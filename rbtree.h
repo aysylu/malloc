@@ -7,23 +7,27 @@
 #define RB_COMPACT
 #include "rb.h"
 
-// This wraps the red-black tree implementation in freeBSD,
-// implemented by Jason Evans (jasone@freebsd.org).
-// The implementation is not ours. Most of the wrapper is.
+/* This wraps the red-black tree implementation in freeBSD,
+ * implemented by Jason Evans (jasone@freebsd.org).
+ * The implementation is not ours. Most of the wrapper is.
+ *
+ * The structure is implemented with a combination of macros
+ * and function definitions, but results in the following 
+ * unified API:
+ *
+ * node_t    type of rb tree nodes
+ * tree_t    type of rb tree itself
 
-// The following API is provided (trimmed from original documentation)
-// node_t    type of rb tree nodes
-// tree_t    type of rb tree itself
-
-// static void tree_new(tree_t*)
-//    Initialize a tree by address
-// static void tree_insert(tree_t*, node_t*) 
-//    Insert a node in the tree
-// static void tree_remove(tree_t*, node_t*)
-//    Remove a node from the tree
-// static node_t* tree_find_min(tree_t*)
-//    Find and return the minimum (smallest address) node in the tree.
-//    Do not remove the node.
+ * static void tree_new(tree_t*)
+ *    Initialize a tree by address
+ * static void tree_insert(tree_t*, node_t*) 
+ *    Insert a node in the tree
+ * static void tree_remove(tree_t*, node_t*)
+ *    Remove a node from the tree
+ * static node_t* tree_find_min(tree_t*)
+ *    Find and return the minimum (smallest address) node in the tree.
+ *    Do not remove the node.
+ */
 
 // RB node structure - just the pointers!
 typedef struct node_s node_t;
