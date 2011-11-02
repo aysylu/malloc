@@ -103,8 +103,8 @@ struct arena_bin {
  ****************/
 
 // For maintenance of a page map, the following may be handy.
-enum page_state {FREE, SMALL_RUN_HEAD, SMALL_RUN_FRAGMENT, 
-		 LARGE_RUN_HEAD, LARGE_RUN_FRAGMENT};
+enum page_state : uint8_t {FREE, SMALL_RUN_HEAD, SMALL_RUN_FRAGMENT, 
+		 	   LARGE_RUN_HEAD, LARGE_RUN_FRAGMENT};
 
 
 struct arena_chunk_hdr {
