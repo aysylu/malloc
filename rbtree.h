@@ -1,3 +1,6 @@
+#ifndef RBTREE_HEADER_GUARD
+#define RBTREE_HEADER_GUARD
+
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -64,3 +67,4 @@ rb_gen(static, tree_, tree_t, node_t, link, nodeCmp);
 		      }
 		      return ret;
 		    }
+#endif /* RBTREE_HEADER_GUARD */
