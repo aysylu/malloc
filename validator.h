@@ -66,24 +66,24 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
   /* Payload addresses must be ALIGNMENT-byte aligned */
   /* YOUR CODE HERE */
   if (!IS_ALIGNED(lo) || !IS_ALIGNED(hi)) {
-    int ret = sprintf(msg, "Payload addresses %c and %c are not aligned\n", lo, hi);
+    int ret = sprintf(msg, "Payload addresses %p and %p are not aligned\n", lo, hi);
     printf("%s", msg);
-    return 1;
+    return 0;
   }
 
   /* The payload must lie within the extent of the heap */
   /* YOUR CODE HERE */
-  if (lo > mem_heapsize() || hi > mem_heapsize()) {
-    int ret = sprintf(msg, "Payload must lie within the extent of the heap; the payload addresses are %c and %c, and the heapsize is %lu\n", lo, hi, mem_heapsize());
+  if (*lo <= mem_heap_lo() || *hi >= mem_heap_hi()) {
+    int ret = sprintf(msg, "Payload must lie within the extent of the heap; the payload addresses are %p and %p, and the heapsize is %lu\n", lo, hi, mem_heapsize());
     printf("%s", msg);
-    return 1;
+    return 0;
   }
 
   /* The payload must not overlap any other payloads */
   /* YOUR CODE HERE */
-  while (ranges != null) {
-    // Get the range in ranges
-    range_t range = ranges->next;
+  // Get the range in ranges
+  range_t *range = *ranges;
+  while (ranges != NULL) {
 
     /* The range in ranges and the current range don't overlap
      only in two cases:
@@ -92,11 +92,13 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
     2) larger than lo and hi of the range
     */
 
-    if ((range.lo < lo && range.hi < hi) || (range.lo > lo && range.hi > hi)) {
+    if ((range->lo < lo && range->hi < hi) || (range->lo > lo && range->hi > hi)) {
       // The regions do not overlap
     } else {
       // The regions overlap
+      int ret = sprintf(msg, "The payload overlaps with some other payload\n");
     }
+    range = range->next;
   }
 
   /* Everything looks OK, so remember the extent of this block by creating a
@@ -104,7 +106,7 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
    */
   p->lo = lo;
   p->hi = hi;
-  ranges->next = p;
+  (*ranges)->next = p;
 
   return 1;
 }
@@ -127,28 +129,28 @@ static void remove_range(range_t **ranges, char *lo)
 
   // We keep track of the curr and prev elements
   // to be able to unlink and relink nodes
-  range_t curr = prevpp;
-  range_t prev = NULL;
+  range_t *curr = *prevpp;
+  range_t *prev = NULL;
   while (curr != NULL) {
-    if (curr.lo == lo) {
+    if (curr->lo == lo) {
       // Match found, remove the node
-      if (**curr == ranges) {
+      if (curr == *prevpp) {
         // The address lo matches the head of the list
         // Set the head of the list to curr.next
-        ranges = curr.next;
+        ranges = &(curr->next);
         // Free the node after unlinking it
         free(curr);
         return;
       } else {
         // Unlink the curr node
-        prev.next = curr.next;
+        prev->next = curr->next;
         // Free the node after unlinking it
         free(curr);
       }
     } else {
       // No match found, continue
       prev = curr;
-      curr = curr.next;
+      curr = curr->next;
     }
   }
 }
@@ -249,6 +251,9 @@ int eval_mm_valid(Type *impl, trace_t *trace, int tracenum)
         if (size < oldsize)
           oldsize = size;
         /* YOUR CODE HERE */
+        for (int i = 0; i < size; ++i) {
+          
+        }
 
         /* Remember region */
         trace->blocks[index] = newp;
