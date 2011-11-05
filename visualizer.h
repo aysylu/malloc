@@ -23,7 +23,7 @@
 void visualize_chunk(arena_chunk_hdr* this_chunk);
 void visualize_large_run(arena_chunk_hdr* this_chunk, int this_page);
 void visualize_small_run(arena_chunk_hdr* this_chunk, int this_page);
-inline size_t small_address_to_cell(small_run_hdr* this_hdr, size_t* this_cell, size_t object_size); 
+inline size_t small_address_to_cell(small_run_hdr* this_hdr, byte* this_cell, size_t object_size); 
 
 /*************
  * Functions *
@@ -34,7 +34,7 @@ void visualize_chunk(arena_chunk_hdr* this_chunk) {
   // To compute position in heap, we get our delta to the true heap bottom, and divide
   // by the size of chunks. 
   printf("This is %zu chunk(s) up from the bottom of the heap.\n",  
-	 (long)((uint8_t*)this_chunk - (uint8_t*)mem_heap_lo())/ FINAL_CHUNK_SIZE);
+	 (long)((byte*)this_chunk - (byte*)mem_heap_lo())/ FINAL_CHUNK_SIZE);
   printf("Page map:\n");
 
   // Iterate over the page map, doing work
@@ -138,7 +138,7 @@ void visualize_small_run(arena_chunk_hdr* this_chunk, int this_page) {
 
 }
 
-inline size_t small_address_to_cell(small_run_hdr* this_hdr, block* this_cell, size_t object_size) {
+inline size_t small_address_to_cell(small_run_hdr* this_hdr, byte* this_cell, size_t object_size) {
   // Given an address in a header, determine what cell number that is in the cell map
   // Direct address subtraction is fun!
   size_t delta = ((size_t)this_cell - (size_t)this_hdr) + SMALL_RUN_HDR_SIZE;
