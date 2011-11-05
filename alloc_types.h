@@ -7,6 +7,18 @@
 // This file defines all data structures used in the malloc
 // implementation, such as run headers and bin metadata.
 
+/***********************
+ * Critical Convention *
+ ***********************/
+
+// There is only one rb-tree implementation. It consists only of pointers;
+// there is no payload. All heap data structures that have rb-tree entried
+// (eg small runs) contain an rb-tree node pointer pair struct as the *first*
+// item in their definition. Thus, rb-tree node pointers are simply convertible
+// into data pointer types. This prevents the need for multiple rb-tree implementations
+// at the cost of introducing a type-safety issue. Accordingly, these type
+// conversions are done in one place whenenver possible.
+
 /*********************
  * Prototype structs *
  *********************/
@@ -86,7 +98,6 @@ size_t get_small_size_class(size_t real_size) {
   return MAX_SMALL_SIZE;
 }
 
-
 /**********************
  * Arena Bin Metadata *
  **********************/
@@ -106,9 +117,15 @@ struct arena_bin {
  ****************/
 
 // For maintenance of a page map, the following may be handy.
-enum page_state : uint8_t {FREE, SMALL_RUN_HEAD, SMALL_RUN_FRAGMENT, 
-		 	   LARGE_RUN_HEAD, LARGE_RUN_FRAGMENT};
+// Can't get C++11 typed enum to compile, so you get a stack of 
+// defines instead, since the default enum type is too big
 
+#define HEADER 0
+#define FREE 1
+#define LARGE_RUN_HEADER 2
+#define LARGE_RUN_FRAGMENT 3
+#define SMALL_RUN_HEADER 4
+#define SMALL_RUN_FRAGMENT 5
 
 struct arena_chunk_hdr {
   // Ptr to Arena in multi-Arena case goes here
@@ -118,12 +135,12 @@ struct arena_chunk_hdr {
   arena_bin bin_headers[NUM_SMALL_CLASSES]; // Store run metadata
   size_t num_pages_allocated; // INITIAL_CHUNK_SIZE <= this <= FINAL_CHUNK_SIZE
                               // ...but don't forget the first page is the header
-  page_state page_map[(FINAL_CHUNK_SIZE / PAGE_SIZE) - 1]; // Stores state of each page
+  uint8_t page_map[(FINAL_CHUNK_SIZE / PAGE_SIZE)]; // Stores state of each page
   // Note above - header data occupies the first free page slot.
 };
 
 inline size_t* get_page_location(arena_chunk_hdr* this_hdr, size_t page_no) {
-  return this_hdr + (page_no * PAGE_SIZE);
+  return (size_t *) ((uint8_t *) this_hdr + (page_no * PAGE_SIZE));
 }
 
 /**************
@@ -146,6 +163,7 @@ struct small_run_hdr {
 
 struct large_run_hdr {
   node_t page_tree_node; // For storage in rb tree of whole-page runs
+  size_t formal_size; // True size of this allocation.
   size_t num_pages; // How many consecutive pages are assigned to this run
 };
 
