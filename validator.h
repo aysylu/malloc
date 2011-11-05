@@ -55,25 +55,32 @@ template <class Type>
 static int add_range(Type *impl, range_t **ranges, char *lo, 
 			int size, int tracenum, int opnum)
 {
-  //char *hi = lo + size - 1;
-  //range_t *p = NULL;
+  char *hi = lo + size - 1;
+  range_t *p = NULL;
 
   /* You can use this as a buffer for writing messages with sprintf. */
-  //char msg[MAXLINE];
+  char msg[MAXLINE];
 
   assert(size > 0);
 
   /* Payload addresses must be ALIGNMENT-byte aligned */
   /* YOUR CODE HERE */
   if (!IS_ALIGNED(lo) || !IS_ALIGNED(hi)) {
-    //TODO: Write error message
+    int ret = sprintf(msg, "Payload addresses %c and %c are not aligned\n", lo, hi);
+    printf("%s", msg);
+    return 1;
   }
 
   /* The payload must lie within the extent of the heap */
   /* YOUR CODE HERE */
+  if (lo > mem_heapsize() || hi > mem_heapsize()) {
+    int ret = sprintf(msg, "Payload must lie within the extent of the heap; the payload addresses are %c and %c, and the heapsize is %lu\n", lo, hi, mem_heapsize());
+    printf("%s", msg);
+    return 1;
+  }
 
   /* The payload must not overlap any other payloads */
-  
+  /* YOUR CODE HERE */
   while (ranges != null) {
     // Get the range in ranges
     range_t range = ranges->next;
@@ -95,7 +102,6 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
   /* Everything looks OK, so remember the extent of this block by creating a
    * range struct and adding it the range list.
    */
-  /* YOUR CODE HERE */
   p->lo = lo;
   p->hi = hi;
   ranges->next = p;
@@ -108,14 +114,43 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
  */
 static void remove_range(range_t **ranges, char *lo)
 {
-  //range_t *p = NULL;
-  //range_t **prevpp = ranges;
+  range_t *p = NULL;
+  range_t **prevpp = ranges;
 
   /* Iterate the linked list until you find the range with a matching lo
    * payload and remove it.  Remember to properly handle the case where the
    * payload is in the first node, and to free the node after unlinking it.
    */
-  /* YOUR CODE HERE */
+  if (prevpp == NULL) {
+    return;
+  }
+
+  // We keep track of the curr and prev elements
+  // to be able to unlink and relink nodes
+  range_t curr = prevpp;
+  range_t prev = NULL;
+  while (curr != NULL) {
+    if (curr.lo == lo) {
+      // Match found, remove the node
+      if (**curr == ranges) {
+        // The address lo matches the head of the list
+        // Set the head of the list to curr.next
+        ranges = curr.next;
+        // Free the node after unlinking it
+        free(curr);
+        return;
+      } else {
+        // Unlink the curr node
+        prev.next = curr.next;
+        // Free the node after unlinking it
+        free(curr);
+      }
+    } else {
+      // No match found, continue
+      prev = curr;
+      curr = curr.next;
+    }
+  }
 }
 
 /*
