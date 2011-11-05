@@ -65,17 +65,40 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
 
   /* Payload addresses must be ALIGNMENT-byte aligned */
   /* YOUR CODE HERE */
+  if (!IS_ALIGNED(lo) || !IS_ALIGNED(hi)) {
+    //TODO: Write error message
+  }
 
   /* The payload must lie within the extent of the heap */
   /* YOUR CODE HERE */
 
   /* The payload must not overlap any other payloads */
-  /* YOUR CODE HERE */
+  
+  while (ranges != null) {
+    // Get the range in ranges
+    range_t range = ranges->next;
+
+    /* The range in ranges and the current range don't overlap
+     only in two cases:
+     lo and hi addresses of the current range are
+    1) smaller than lo and hi of the range
+    2) larger than lo and hi of the range
+    */
+
+    if ((range.lo < lo && range.hi < hi) || (range.lo > lo && range.hi > hi)) {
+      // The regions do not overlap
+    } else {
+      // The regions overlap
+    }
+  }
 
   /* Everything looks OK, so remember the extent of this block by creating a
    * range struct and adding it the range list.
    */
   /* YOUR CODE HERE */
+  p->lo = lo;
+  p->hi = hi;
+  ranges->next = p;
 
   return 1;
 }
