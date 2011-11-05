@@ -1,3 +1,6 @@
+#ifndef ALLOC_TYPES_HEADER_GUARD
+#define ALLOC_TYPES_HEADER_GUARD
+
 #include <stdint.h>
 #include "rbtree.h"
 
@@ -140,4 +143,4 @@ struct large_run_hdr {
   size_t num_pages; // How many consecutive pages are assigned to this run
 };
 
-
+#endif /* ALLOC_TYPES_HEADER_GUARD */
