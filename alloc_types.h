@@ -116,9 +116,15 @@ struct arena_chunk_hdr {
   tree_t clean_page_runs; // For clean *whole pages* for Large allocation
   tree_t dirty_page_runs; // For dirty *whole pages*
   arena_bin bin_headers[NUM_SMALL_CLASSES]; // Store run metadata
+  size_t num_pages_allocated; // INITIAL_CHUNK_SIZE <= this <= FINAL_CHUNK_SIZE
+                              // ...but don't forget the first page is the header
   page_state page_map[(FINAL_CHUNK_SIZE / PAGE_SIZE) - 1]; // Stores state of each page
   // Note above - header data occupies the first free page slot.
 };
+
+inline size_t* get_page_location(arena_chunk_hdr* this_hdr, size_t page_no) {
+  return this_hdr + (page_no * PAGE_SIZE);
+}
 
 /**************
  * Small Runs *
