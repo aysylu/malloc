@@ -5,17 +5,6 @@
 #include "assert.h"
 #include "memlib.h" // Useful debugger
 
-// Currently, let's always use DEBUG_PRINT_TRACE if DEBUG is set
-#ifdef DEBUG
-#define DEBUG_PRINT_TRACE
-#endif
-
-#ifdef DEBUG_PRINT_TRACE
-#define PRINT_TRACE(...) printf( __VA_ARGS__ )
-#else
-#define PRINT_TRACE(...) do {} while (0)
-#endif
-
 /*********************
  * Utility Functions *
  *********************/
@@ -109,15 +98,17 @@ void* arena_hdr::malloc(size_t size) {
   // Two cases we care about: HUGE allocations and Small allocations.
   // For the former, we do this ourselves.
   // For the latter, we delegate to our bins.
-
+  PRINT_TRACE("Entering malloc at the arena level for (%zu).\n", size);
   if (size > MAX_LARGE_SIZE) {
     // Go into huge allocation mode
+    PRINT_TRACE(" Using a HUGE allocation.\n");
     size_t num_chunks = get_num_chunks(size);
     if (free != NULL) {
       // TODO: Try to pull something from the free list
     }
     // Uh-oh. The free list couldn't help us. This needs a *new chunk*.
     // Arena is going to demand new space on the heap! Single thread, everything fine.
+    PRINT_TRACE(" Creating a new chunk for this allocation.\n");
     void* new_heap = mem_sbrk(num_chunks * FINAL_CHUNK_SIZE);
     assert(new_heap != NULL);
     // Write a new huge_run_hdr into the new space.
@@ -128,13 +119,16 @@ void* arena_hdr::malloc(size_t size) {
     return (void*) ((byte*) new_heap + HUGE_RUN_HDR_SIZE);
 
   } else if (size <= MAX_SMALL_SIZE) {
+    PRINT_TRACE(" Using a small allocation.\n");
     // Make sure our sizer is working properly.
     assert (get_small_size_class(size) != -1);
     // Now make a bin do the work
     // Note - the bin no longer cares about the size.
+    PRINT_TRACE(" ...delegating to bin %zu (%d).\n", get_small_size_class(size), SMALL_CLASS_SIZES[get_small_size_class(size)]);
     size_t bin_index = get_small_size_class(size);
     return bin_headers[bin_index].malloc();
   } else {
+    PRINT_TRACE(" Using a Large allocation.\n");
     // TODO: NOW: Make Large runs work
     // Look, I don't know, panic or something.
     // Crawl the page map to identify consecutive pages.
@@ -197,17 +191,22 @@ void arena_chunk_hdr::finalize_trees() {
 
 // You have free pages. Someone needs a small run. Go for it.
 small_run_hdr* arena_chunk_hdr::carve_small_run(arena_bin* owner) {
+  PRINT_TRACE("  Entering small run carver.\n");
+  PRINT_TRACE("   Before allocating, we have %zu pages left\n.", num_pages_available);
   assert(num_pages_available > 0);
   num_pages_available--;
 
   if (num_pages_available == 0) {
     // Two options. Either we grow, or we ask to be removed from the availability list.
     if (num_pages_allocated < FINAL_CHUNK_PAGES) {
+      PRINT_TRACE("   Growing this chunk.\n");
       // Let's get bigger and see how many new pages we have!
       size_t old_allocation = num_pages_available;
       num_pages_allocated = parent->grow(this);
       num_pages_available = (num_pages_allocated - old_allocation);
+      PRINT_TRACE("   ...grown to %zu pages (%zu free).\n", num_pages_allocated, num_pages_available);
     } else {
+      PRINT_TRACE("   ...can't grow; removing from available-page tree.\n");
       parent->filled_chunk((node_t*)this);
     }
   }
@@ -218,6 +217,7 @@ small_run_hdr* arena_chunk_hdr::carve_small_run(arena_bin* owner) {
   for (ii = 1 ; ii < num_pages_allocated ; ii++) {
     if (page_map[ii] == FREE) {
       small_run_hdr* new_page = (small_run_hdr*)get_page_location(ii);
+      PRINT_TRACE("   Installing new small run at %p.\n", new_page);
       *new_page = small_run_hdr(owner);
       // Let's finish the construction properly by making it available
       // to the owner of bins of that size
@@ -265,20 +265,26 @@ void arena_bin::finalize_trees() {
 
 // Delegated malloc. Sorry, you're it - you're going to have to figure it out.
 void* arena_bin::malloc() {
+  PRINT_TRACE(" Entering malloc at the arena_bin level.\n");
   // If we have a current run, we can ask it to malloc. But otherwise...
   if (current_run == NULL) {
+    PRINT_TRACE("  No current run; choosing from tree.\n");
     // All right, let's get a chunk from the tree then!
     node_t* new_run = tree_find_min(&available_runs);
     if (new_run != NULL) {
+      PRINT_TRACE("  ...got a run from the tree (%p).\n", new_run);
       current_run = (small_run_hdr*)new_run;
     } else {
       // Get a chunk from our parent
+      PRINT_TRACE("  No good, we need a chunk from a parent.\n");
       arena_chunk_hdr* new_chunk = (parent->retrieve_normal_chunk());
       // Ask the chunk to carve a new small run to fit us
       current_run = new_chunk->carve_small_run(this);
     }
+  } else {
+    PRINT_TRACE("  We're just going to use the current run at %p.\n", current_run);
   }
-
+  PRINT_TRACE("  Assigning this allocation to the run at %p.\n", current_run);
   // We're set up either way, so now we can just have the run malloc
   return current_run->malloc(); 
 }
@@ -294,8 +300,12 @@ void arena_bin::filled_run(node_t* full_run) {
   // You can only remove a run from a tree if it exists
   assert(tree_search(&available_runs, full_run) != NULL);
   tree_remove(&available_runs, full_run);
+  assert(tree_search(&available_runs, full_run) == NULL);
   if (full_run == (node_t*) current_run) { // Not anymore!
+    PRINT_TRACE("  ...and it was the current run.\n");
     current_run = NULL;
+  } else {
+    PRINT_TRACE("  ...but I don't think it was the current run.\n");
   }
 }
 
@@ -333,6 +343,8 @@ small_run_hdr::small_run_hdr(arena_bin* _parent) {
 }
 
 void* small_run_hdr::malloc() {
+  PRINT_TRACE("   Entering malloc at the small_run_hdr level (%zu).\n", (parent->object_size));
+  PRINT_TRACE("    Before we take one, this run has %zu uses left.\n", free_cells);
   // We *really* shouldn't be asked if we have no free space - this is a cleanup error
   assert(free_cells > 0);
   byte* new_address = NULL; //What we're giving the user
@@ -341,16 +353,19 @@ void* small_run_hdr::malloc() {
   // If no space left, get us off the tree! We don't want any more allocations
   if (free_cells == 0) {
     // We're also a node_t, so ask the parent to remove us
+    PRINT_TRACE("    ...removing filled page from bin.\n");
     parent->filled_run((node_t*)this);
   }
 
   if (free != NULL) {
+    PRINT_TRACE("    We're going to take a cell off the free list.\n");
     // Grab the head of the free list
     new_address = free;
     // Pop it off and chain the free pointer down
     free = (byte*) *free;
     // Give the user the space
   } else {
+    PRINT_TRACE("    No free list; we're using the 'next' pointer.\n");
     // OK, so we don't have a free list.
     // Get a new cell from the never-used pointer
     new_address = next;

@@ -9,6 +9,22 @@
 // This file defines all data structures used in the malloc
 // implementation, such as run headers and bin metadata.
 
+/****************
+ * Debug Macros *
+ ****************/
+
+// Currently, let's always use DEBUG_PRINT_TRACE if DEBUG is set
+#ifdef DEBUG
+#define DEBUG_PRINT_TRACE
+#endif
+
+#ifdef DEBUG_PRINT_TRACE
+#define PRINT_TRACE(...) printf( __VA_ARGS__ )
+#else
+#define PRINT_TRACE(...) // Do nothing
+#endif
+
+
 /***********************
  * Critical Convention *
  ***********************/
