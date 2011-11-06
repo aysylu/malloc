@@ -83,6 +83,8 @@ struct huge_run_hdr;
 #define MAX_LARGE_SIZE (FINAL_CHUNK_SIZE - PAGE_SIZE) // Note - one page always allocated to header
 // Anything larger than this must be given at least *two* chunks
 #define MAX_SINGLE_CHUNK (FINAL_CHUNK_SIZE - HUGE_RUN_HDR_SIZE)
+// Anything large than this must be given at least *two* pages
+#define MAX_SINGLE_PAGE (PAGE_SIZE - LARGE_RUN_HDR_SIZE)
 
 // Rounds up to the nearest multiple of ALIGNMENT.
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1))
@@ -96,8 +98,6 @@ struct huge_run_hdr;
 #define SMALL_RUN_HDR_SIZE (ALIGN(sizeof(small_run_hdr)))
 #define LARGE_RUN_HDR_SIZE (ALIGN(sizeof(large_run_hdr)))
 #define HUGE_RUN_HDR_SIZE (ALIGN(sizeof(huge_run_hdr)))
-
-#define NUM_PAGES_IN_CHUNK ((FINAL_CHUNK_SIZE - ARENA_CHUNK_HDR_SIZE) / PAGE_SIZE)
 
 // All our pointers need to operate on byte-level math - let's make that a thing
 typedef uint8_t byte;
@@ -208,6 +208,7 @@ struct arena_chunk_hdr {
   size_t num_pages_available;
   size_t num_pages_allocated; // INITIAL_CHUNK_SIZE <= this <= FINAL_CHUNK_SIZE
                               // ...but don't forget the first page is the header
+  // TODO: This tree is currently unused
   tree_t clean_page_runs; // For clean *whole pages* for Large allocation
   uint8_t page_map[(FINAL_CHUNK_SIZE / PAGE_SIZE)]; // Stores state of each page
   // Note above - header data occupies the first free page slot.
@@ -217,6 +218,8 @@ struct arena_chunk_hdr {
 
   // Expand heap by one chunk size, allocating the chunk for small or large page runs
   arena_chunk_hdr* add_normal_chunk();
+  // Find a run of N consecutive pages to fit a Large allocation.
+  void* fit_large_run(size_t consec_pages);
   // Converter routines between page index and page address
   inline byte* get_page_location(size_t page_no);
   inline size_t get_page_index(byte* page_addr);
@@ -249,10 +252,10 @@ struct small_run_hdr {
 
 struct large_run_hdr {
   node_t page_tree_node; // For storage in rb tree of whole-page runs
-  size_t formal_size; // True size of this allocation.
+  //size_t formal_size; // True size of this allocation.
   size_t num_pages; // How many consecutive pages are assigned to this run
   // Constructor
-  large_run_hdr(size_t _formal_size);
+  large_run_hdr(size_t _num_pages);
 };
 
 /*************
