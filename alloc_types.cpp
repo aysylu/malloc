@@ -114,7 +114,7 @@ void* arena_hdr::malloc(size_t size) {
   PRINT_TRACE("Entering malloc at the arena level for (%zu).\n", size);
   if (size > MAX_LARGE_SIZE) {
 
-    // ** Use Huge Chunk Mode **
+    // ** Use Huge Mode **
 
     PRINT_TRACE(" Using a HUGE allocation.\n");
     size_t num_chunks = get_num_chunks(size);
@@ -143,7 +143,7 @@ void* arena_hdr::malloc(size_t size) {
 
   } else if (size <= MAX_SMALL_SIZE) {
 
-    // ** Use Small Chunk Mode **
+    // ** Use Small Mode **
 
     PRINT_TRACE(" Using a small allocation.\n");
     // Make sure our sizer is working properly.
@@ -155,7 +155,7 @@ void* arena_hdr::malloc(size_t size) {
     return bin_headers[bin_index].malloc();
   } else {
 
-    // ** Use Large Chunk Mode **
+    // ** Use Large Mode **
 
     PRINT_TRACE(" Using a Large allocation.\n");
     // We need to ask chunks to try to fit this thing.
@@ -242,51 +242,71 @@ void arena_chunk_hdr::finalize_trees() {
 // You have free pages. Do you have consec_pages in a row? Make a large run there.
 void* arena_chunk_hdr::fit_large_run(size_t consec_pages) {
   PRINT_TRACE("  Trying to fit into run %p, which has %zu free pages.\n", this, num_pages_available);
-  // If you don't even have enough free pages, you can be done.
+
+  // If you have enough free pages, the attempt can be made
   if (consec_pages > num_pages_available) {
-    if (num_pages_available + (FINAL_CHUNK_PAGES - num_pages_allocated) > consec_pages) {
-      // We've determined growing can work
-      PRINT_TRACE("  Growing chunk for large run.\n");
-      PRINT_TRACE("  We need %zu pages, and are currently %zu big.\n", consec_pages, num_pages_allocated);
-      size_t old_allocation = num_pages_allocated;
-      // Grow generously
-      while ((num_pages_allocated - old_allocation) < consec_pages) {
-	num_pages_allocated = parent->grow(this);
-	PRINT_TRACE("  ...%zu big...\n", num_pages_allocated);
+    
+    int consec = 0;
+    int ii;
+    for (ii = 1 ; ii < num_pages_allocated ; ii++) {
+      if (page_map[ii] == FREE) {
+	consec++;
+	if (consec == consec_pages) {
+	  // We've found space for a large run. Make it so.
+	  int start_point = ii + 1 - consec;
+	  PRINT_TRACE("  We've found consecutive slots for the large allocation.\n");
+	  PRINT_TRACE("  %zu of them, starting at %d (%p)\n", consec_pages, start_point, get_page_location(start_point));
+	  page_map[start_point] = LARGE_RUN_HEADER;
+	  int jj;
+	  for (jj = 1 ; jj < consec_pages ; jj++) {
+	    page_map[start_point + jj] = LARGE_RUN_FRAGMENT;
+	  }
+	  byte* new_address = get_page_location(start_point);
+	  *(large_run_hdr*)new_address = large_run_hdr(consec_pages);
+	  num_pages_available -= consec_pages;
+	  // This returns the *address* for use.
+	  return (new_address + LARGE_RUN_HDR_SIZE);
+	}
+      } else {
+	consec = 0;
       }
-      num_pages_available = (num_pages_allocated - old_allocation);
-    } else {
-      PRINT_TRACE("  ...but this chunk can't fit it even by growing.\n");
-      return NULL;
     }
   }
 
-  int consec = 0;
-  int ii;
-  for (ii = 1 ; ii < num_pages_allocated ; ii++) {
-    if (page_map[ii] == FREE) {
-      consec++;
-      if (consec == consec_pages) {
-	// We've found space for a large run. Make it so.
-	int start_point = ii + 1 - consec;
-	PRINT_TRACE("  We've found consecutive slots for the large allocation.\n");
-	PRINT_TRACE("  %zu of them, starting at %d (%p)\n", consec_pages, start_point, get_page_location(start_point));
-	page_map[start_point] = LARGE_RUN_HEADER;
-	int jj;
-	for (jj = 1 ; jj < consec_pages ; jj++) {
-	  page_map[start_point + jj] = LARGE_RUN_FRAGMENT;
-	}
-	byte* new_address = get_page_location(start_point);
-	*(large_run_hdr*)new_address = large_run_hdr(consec_pages);
-	num_pages_available -= consec_pages;
-	return (new_address + LARGE_RUN_HDR_SIZE);
-      }
-    } else {
-      consec = 0;
+  if (num_pages_available + (FINAL_CHUNK_PAGES - num_pages_allocated) > consec_pages) {
+    // We've determined growing can work
+    PRINT_TRACE("  Growing chunk for large run.\n");
+    PRINT_TRACE("  We need %zu pages, and are currently %zu big.\n", consec_pages, num_pages_allocated);
+    size_t old_allocation = num_pages_allocated;
+    // Grow generously
+    while ((num_pages_allocated - old_allocation) < consec_pages) {
+      num_pages_allocated = parent->grow(this);
+      PRINT_TRACE("  ...%zu big...\n", num_pages_allocated);
     }
+    num_pages_available = (num_pages_allocated - old_allocation);
+
+    // At this point, we know perfectly well the *first* N pages are open
+    // ...but maybe a few more, too.
+    int ii, jj;
+    size_t start_point;
+    for (ii = old_allocation ; ii > 0 ; ii--) {
+      if (page_map[ii] != FREE) {
+	start_point = ii+1;
+      }
+    }
+    page_map[start_point] = LARGE_RUN_HEADER;
+    for (jj = 1 ; jj < consec_pages ; jj++) {
+      page_map[ii + jj] = LARGE_RUN_FRAGMENT;
+    }
+    byte* new_address = get_page_location(start_point);
+    *(large_run_hdr*)new_address = large_run_hdr(consec_pages);
+    num_pages_available -= consec_pages;
+    return (new_address + LARGE_RUN_HDR_SIZE);
+
+  } else {
+    PRINT_TRACE("  ...but this chunk can't fit it even by growing.\n");
+    return NULL;
   }
-  // ... sorry, couldn't fit. Try another chunk.
-  return NULL;
 }
 
 // You have free pages. Someone needs a small run. Go for it.
@@ -323,6 +343,7 @@ small_run_hdr* arena_chunk_hdr::carve_small_run(arena_bin* owner) {
 	  // to the owner of bins of that size
 	  owner->run_available((node_t*) new_page);
 	  num_pages_available -= consec_pages;
+	  // This returns the *run* for use.
 	  return new_page;
 	} else {
 	  consec = 0;
@@ -339,6 +360,20 @@ small_run_hdr* arena_chunk_hdr::carve_small_run(arena_bin* owner) {
       PRINT_TRACE("  ...%zu big...\n", num_pages_allocated);
     }
     num_pages_available = (num_pages_allocated - old_allocation);
+
+    // At this point, we know perfectly well the last N pages are fair game
+    int ii = num_pages_allocated - consec_pages + 1, jj;
+    page_map[ii] = SMALL_RUN_HEADER;
+    for (jj = 1 ; jj < consec_pages ; jj++) {
+      page_map[ii+jj] = SMALL_RUN_FRAGMENT;
+    }
+    small_run_hdr* new_page = (small_run_hdr*)get_page_location(ii);
+    *new_page = small_run_hdr(owner);
+    new_page->finalize();
+    owner->run_available((node_t*) new_page);
+    num_pages_available -= consec_pages;
+    return new_page;
+
   } else {
     PRINT_TRACE("   Even a grown chunk won't fit this; try somewhere else.\n");
     return NULL;
@@ -404,14 +439,14 @@ void* arena_bin::malloc() {
 	if (new_address != NULL) {
 	  // A new small run has been allocated for us. Move along.
 	  PRINT_TRACE("   ...succeeded, at %p.\n", new_address);
-	  return new_address;
+	  current_run = (small_run_hdr*)new_address;
 	}
 	new_chunk = tree_next(&parent->normal_chunks, new_chunk);
       }
       PRINT_TRACE("  Argh! There's not a single chunk we can work with.\n");
       // More space! Parent, take care of it.
       new_chunk = (node_t*)parent->add_normal_chunk();
-      return ((arena_chunk_hdr*)new_chunk)->carve_small_run(this);
+      current_run = ((arena_chunk_hdr*)new_chunk)->carve_small_run(this);
     }
   } else {
     PRINT_TRACE("  We're just going to use the current run at %p.\n", current_run);
