@@ -192,7 +192,10 @@ small_run_hdr* arena_chunk_hdr::carve_small_run(arena_bin* owner) {
   if (num_pages_available == 0) {
     // Two options. Either we grow, or we ask to be removed from the availability list.
     if (num_pages_allocated < FINAL_CHUNK_PAGES) {
+      // Let's get bigger and see how many new pages we have!
+      size_t old_allocation = num_pages_available;
       num_pages_allocated = parent->grow(this);
+      num_pages_available = (num_pages_allocated - old_allocation);
     } else {
       parent->filled_chunk((node_t*)this);
     }
@@ -205,6 +208,9 @@ small_run_hdr* arena_chunk_hdr::carve_small_run(arena_bin* owner) {
     if (page_map[ii] == FREE) {
       small_run_hdr* new_page = (small_run_hdr*)get_page_location(ii);
       *new_page = small_run_hdr(owner);
+      // Let's finish the construction properly by making it available
+      // to the owner of bins of that size
+      owner->run_available((node_t*) new_page);
       return new_page;
     }
   }
@@ -266,8 +272,15 @@ void* arena_bin::malloc() {
   return current_run->malloc(); 
 }
 
+void arena_bin::run_available(node_t* avail_run) {
+  // Make sure we don't somehow have a duplicate entry
+  assert(tree_search(&available_runs, avail_run) == NULL);
+  tree_insert(&available_runs, avail_run);
+}
+
 // Note that a run is full and should not be considered for runs.
 void arena_bin::filled_run(node_t* full_run) {
+  // You can only remove a run from a tree if it exists
   assert(tree_search(&available_runs, full_run) != NULL);
   tree_remove(&available_runs, full_run);
   if (full_run == (node_t*) current_run) { // Not anymore!

@@ -124,6 +124,9 @@ struct arena_bin {
 
   // Delegation of malloc
   void* malloc();
+  // Signal that a run is new or recently unfilled and should be added
+  // to the tree
+  void run_available(node_t* avail_run);
   // Signal that a run is filled and should be dropped from the tree
   void filled_run(node_t* full_run);
 
