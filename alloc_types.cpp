@@ -1,6 +1,7 @@
 // See alloc_types.h for thorough documentation on classes and structure.
 #include <algorithm>
 #include <stdio.h> // The most useful debugger
+#include <stdlib.h>
 #include "alloc_types.h"
 #include "assert.h"
 #include "memlib.h" // Useful debugger

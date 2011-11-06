@@ -2,6 +2,7 @@
 #define ALLOC_TYPES_HEADER_GUARD
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h> // contains memset
 #include "rbtree.h"
 #include "memlib.h" // Single-threaded case only - grants access to sbrk
