@@ -66,7 +66,10 @@ namespace my
   void * allocator::malloc(size_t size)
   {
     // Send this size to the lone arena for allocation
+#ifdef DEBUG
+    // Use arena visualization
     visualize_arena(((arena_hdr*)(mem_heap_lo())));
+#endif
     return ((arena_hdr*)(mem_heap_lo()))->malloc(size);
   }
 

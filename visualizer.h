@@ -35,7 +35,7 @@ void visualize_arena(arena_hdr* this_arena) {
 }
 
 void visualize_chunk(arena_chunk_hdr* this_chunk) {
-  printf("Visualizing chunk at heap point %p\n", this_chunk);
+  printf("\n\n** Visualizing chunk at heap point %p **\n", this_chunk);
   // To compute position in heap, we get our delta to the true heap bottom, and divide
   // by the size of chunks. 
   printf("This is %zu chunk(s) up from the bottom of the heap.\n",  
@@ -74,6 +74,7 @@ void visualize_chunk(arena_chunk_hdr* this_chunk) {
       
     }
   }
+  printf("\n");
 }
 
 void visualize_large_run(arena_chunk_hdr* this_chunk, size_t this_page) {
