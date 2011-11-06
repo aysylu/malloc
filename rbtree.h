@@ -27,9 +27,12 @@
  *    Insert a node in the tree
  * static void tree_remove(tree_t*, node_t*)
  *    Remove a node from the tree
- * static node_t* tree_find_min(tree_t*)
+ * static node_t* tree_first(tree_t*)
  *    Find and return the minimum (smallest address) node in the tree.
  *    (Do not remove the node.)
+ * static node_t tree_next(tree_t*, node_t*)
+ *    Find and return the next larger node after the given node, or
+ *    NULL if you're at the end of the tree.
  */
 
 // RB node structure - just the pointers!
@@ -52,22 +55,8 @@ static int nodeCmp(node_t* a_node, node_t* a_other) {
 typedef rbt(node_t) tree_t;
 // Do macros
 rb_gen(static, tree_, tree_t, node_t, link, nodeCmp);
-
+		    
 		    // Extract head node
-		    #define tree_head(x) ((x)->rbt_root)
+#define tree_head(x) ((x)->rbt_root)
 
-		    // Find minimum node.
-		    static node_t* tree_find_min(tree_t* inTree) {
-		      node_t* ret = tree_head(inTree);
-
-		      // If tree is empty...
-		      if (ret == &(inTree->rbt_nil))
-			return NULL;
-
-		      ret = rbtn_left_get(node_t, link, ret);
-		      while (rbtn_left_get(node_t, link, ret) != &(inTree->rbt_nil)) {
-			ret = rbtn_left_get(node_t, link, ret);
-		      }
-		      return ret;
-		    }
 #endif /* RBTREE_HEADER_GUARD */

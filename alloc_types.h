@@ -6,8 +6,35 @@
 #include "rbtree.h"
 #include "memlib.h" // Single-threaded case only - grants access to sbrk
 
+#define MAX_SIZE_T (size_t)(-1)
+
 // This file defines all data structures used in the malloc
 // implementation, such as run headers and bin metadata.
+
+/****************
+ * Debug Macros *
+ ****************/
+
+// Currently, let's always use DEBUG_PRINT_TRACE if DEBUG is set
+#ifdef DEBUG
+#define DEBUG_PRINT_TRACE
+#endif
+
+#ifdef DEBUG_PRINT_TRACE
+#define PRINT_TRACE(...) printf( __VA_ARGS__ )
+#else
+#define PRINT_TRACE(...) // Do nothing
+#endif
+
+/**************
+ * Finalizers *
+ **************/
+
+// Our many awesome control structures must be created on the stack,
+// then written to the heap. This means no pointer initialization during 
+// the constructor! If you need to do pointer setup, do it in the 
+// object's finalize() method, which we agree to call only after it's
+// placed on the heap.
 
 /***********************
  * Critical Convention *
@@ -20,6 +47,9 @@
 // into data pointer types. This prevents the need for multiple rb-tree implementations
 // at the cost of introducing a type-safety issue. Accordingly, these type
 // conversions are done in one place whenenver possible.
+
+// Trees cannot be finalized with tree_new until the constructed object has been
+// written to the heap. Take care.
 
 /*********************
  * Prototype structs *
@@ -62,6 +92,8 @@ struct huge_run_hdr;
 #define MAX_LARGE_SIZE (FINAL_CHUNK_SIZE - PAGE_SIZE) // Note - one page always allocated to header
 // Anything larger than this must be given at least *two* chunks
 #define MAX_SINGLE_CHUNK (FINAL_CHUNK_SIZE - HUGE_RUN_HDR_SIZE)
+// Anything large than this must be given at least *two* pages
+#define MAX_SINGLE_PAGE (PAGE_SIZE - LARGE_RUN_HDR_SIZE)
 
 // Rounds up to the nearest multiple of ALIGNMENT.
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1))
@@ -75,8 +107,6 @@ struct huge_run_hdr;
 #define SMALL_RUN_HDR_SIZE (ALIGN(sizeof(small_run_hdr)))
 #define LARGE_RUN_HDR_SIZE (ALIGN(sizeof(large_run_hdr)))
 #define HUGE_RUN_HDR_SIZE (ALIGN(sizeof(huge_run_hdr)))
-
-#define NUM_PAGES_IN_CHUNK ((FINAL_CHUNK_SIZE - ARENA_CHUNK_HDR_SIZE) / PAGE_SIZE)
 
 // All our pointers need to operate on byte-level math - let's make that a thing
 typedef uint8_t byte;
@@ -116,9 +146,14 @@ struct arena_bin {
   // Constructor
   arena_bin(); // "Decoy constructor"
   arena_bin(arena_hdr* parent, size_t _object_size);
+  // Finalizer - once this is heaped
+  void finalize_trees();
 
   // Delegation of malloc
   void* malloc();
+  // Signal that a run is new or recently unfilled and should be added
+  // to the tree
+  void run_available(node_t* avail_run);
   // Signal that a run is filled and should be dropped from the tree
   void filled_run(node_t* full_run);
 
@@ -143,6 +178,11 @@ struct arena_hdr {
 
   // Constructor
   arena_hdr();
+  // Some parts of construction can only be done once this is heapified, since they
+  // themselves require heap. This includes bin construction and trees
+  void finalize();
+
+  // Delegated malloc
   void* malloc(size_t size);
   // Find a chunk with space
   arena_chunk_hdr* retrieve_normal_chunk();
@@ -177,13 +217,18 @@ struct arena_chunk_hdr {
   size_t num_pages_available;
   size_t num_pages_allocated; // INITIAL_CHUNK_SIZE <= this <= FINAL_CHUNK_SIZE
                               // ...but don't forget the first page is the header
+  // TODO: This tree is currently unused
   tree_t clean_page_runs; // For clean *whole pages* for Large allocation
   uint8_t page_map[(FINAL_CHUNK_SIZE / PAGE_SIZE)]; // Stores state of each page
   // Note above - header data occupies the first free page slot.
   // Constructor
   arena_chunk_hdr(arena_hdr* _parent);
+  void finalize_trees();
+
   // Expand heap by one chunk size, allocating the chunk for small or large page runs
   arena_chunk_hdr* add_normal_chunk();
+  // Find a run of N consecutive pages to fit a Large allocation.
+  void* fit_large_run(size_t consec_pages);
   // Converter routines between page index and page address
   inline byte* get_page_location(size_t page_no);
   inline size_t get_page_index(byte* page_addr);
@@ -206,6 +251,8 @@ struct small_run_hdr {
   size_t free_cells; // How many free cells remain
   // Constructor
   small_run_hdr(arena_bin* _parent);
+  // Finalizer
+  void finalize();
   // Delegated malloc
   void* malloc();
 };
@@ -216,10 +263,10 @@ struct small_run_hdr {
 
 struct large_run_hdr {
   node_t page_tree_node; // For storage in rb tree of whole-page runs
-  size_t formal_size; // True size of this allocation.
+  //size_t formal_size; // True size of this allocation.
   size_t num_pages; // How many consecutive pages are assigned to this run
   // Constructor
-  large_run_hdr(size_t _formal_size);
+  large_run_hdr(size_t _num_pages);
 };
 
 /*************

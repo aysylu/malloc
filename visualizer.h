@@ -19,10 +19,9 @@
 #define NEVER 2
 
 // ** Prototypes ** //
-
+void visualize_large_run(arena_chunk_hdr* this_chunk, size_t this_page);
+void visualize_small_run(arena_chunk_hdr* this_chunk, size_t this_page);
 void visualize_chunk(arena_chunk_hdr* this_chunk);
-void visualize_large_run(arena_chunk_hdr* this_chunk, int this_page);
-void visualize_small_run(arena_chunk_hdr* this_chunk, int this_page);
 inline size_t small_address_to_cell(small_run_hdr* this_hdr, byte* this_cell, size_t object_size); 
 
 /*************
@@ -36,7 +35,7 @@ void visualize_arena(arena_hdr* this_arena) {
 }
 
 void visualize_chunk(arena_chunk_hdr* this_chunk) {
-  printf("Visualizing chunk at heap point %p\n", this_chunk);
+  printf("\n\n** Visualizing chunk at heap point %p **\n", this_chunk);
   // To compute position in heap, we get our delta to the true heap bottom, and divide
   // by the size of chunks. 
   printf("This is %zu chunk(s) up from the bottom of the heap.\n",  
@@ -57,10 +56,10 @@ void visualize_chunk(arena_chunk_hdr* this_chunk) {
       printf("Unallocated page.\n");
       break;
     case SMALL_RUN_FRAGMENT:
-      printf("... small run continues ...");
+      printf("... small run continues ...\n");
       break;
     case LARGE_RUN_FRAGMENT:
-      printf("... large run continues ...");
+      printf("... large run continues ...\n");
       break;
       
       // Nontrivial case - header of a large run.
@@ -75,13 +74,14 @@ void visualize_chunk(arena_chunk_hdr* this_chunk) {
       
     }
   }
+  printf("\n");
 }
 
 void visualize_large_run(arena_chunk_hdr* this_chunk, size_t this_page) {
   // Extract run location, convert to run header, analyze
   large_run_hdr* this_hdr = (large_run_hdr *) (this_chunk->get_page_location(this_page));
-  printf("Large run begins, spanning %zu bytes (%zu pages).\n",
-	 (this_hdr->formal_size), (this_hdr->num_pages));
+  printf("Large run begins, spanning %zu pages.\n",
+	 (this_hdr->num_pages));
 }
 
 void visualize_small_run(arena_chunk_hdr* this_chunk, size_t this_page) {
@@ -93,9 +93,9 @@ void visualize_small_run(arena_chunk_hdr* this_chunk, size_t this_page) {
   printf("Small run begins, containing %zu slots of size %zu bytes.\n",
 	 (num_cells),
 	 (object_size));
-  printf("       In total, this run spans %zu bytes.\n",
+  printf("        In total, this run spans %zu bytes.\n",
 	 (this_hdr->parent->run_length));
-  printf("       Cells are mapped as follows:\n");
+  printf("        Cells are mapped as follows:");
 
   // Now to visualize the run. Start by assigning every cell FILLED.
   uint8_t cells[num_cells];
@@ -123,6 +123,11 @@ void visualize_small_run(arena_chunk_hdr* this_chunk, size_t this_page) {
   // Print the visualization, up to 50 cells per line, using a single
   // symbol to represent the state of each cell
   for (ii = 0 ; ii < num_cells ; ii++) {
+    // Linebreak every 64 chars
+    if (ii%64 == 0) {
+      printf("\n        ");
+    }
+
     switch (cells[ii]) {
     case FILLED:
       printf("O");
@@ -135,10 +140,6 @@ void visualize_small_run(arena_chunk_hdr* this_chunk, size_t this_page) {
       break;
     }
 
-    // Linebreak every 50 chars
-    if (ii%50 == 0) {
-      printf("\n       ");
-    }
   }
   printf("\n");
 
@@ -147,7 +148,7 @@ void visualize_small_run(arena_chunk_hdr* this_chunk, size_t this_page) {
 inline size_t small_address_to_cell(small_run_hdr* this_hdr, byte* this_cell, size_t object_size) {
   // Given an address in a header, determine what cell number that is in the cell map
   // Direct address subtraction is fun!
-  size_t delta = ((size_t)this_cell - (size_t)this_hdr) + SMALL_RUN_HDR_SIZE;
+  size_t delta = (size_t)((byte*)this_cell - (byte*)this_hdr) - SMALL_RUN_HDR_SIZE;
   return (size_t)(delta / object_size);
 } 
 
