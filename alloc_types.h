@@ -5,7 +5,6 @@
 #include <string.h> // contains memset
 #include "rbtree.h"
 #include "memlib.h" // Single-threaded case only - grants access to sbrk
-#include "visualizer.h"
 
 #define MAX_SIZE_T (size_t)(-1)
 
