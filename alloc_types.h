@@ -6,6 +6,8 @@
 #include "rbtree.h"
 #include "memlib.h" // Single-threaded case only - grants access to sbrk
 
+#define MAX_SIZE_T (size_t)(-1)
+
 // This file defines all data structures used in the malloc
 // implementation, such as run headers and bin metadata.
 

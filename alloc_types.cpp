@@ -27,7 +27,7 @@ size_t get_small_size_class(size_t real_size) {
   }
   // PANIC! This doesn't actually fit in a small container!
   assert(0); // Nothing to check here - we *did* screw up.
-  return (size_t)(-1);
+  return MAX_SIZE_T;
 }
 
 // Get how many chunks are necessary for a huge allocation request
@@ -121,7 +121,7 @@ void* arena_hdr::malloc(size_t size) {
   } else if (size <= MAX_SMALL_SIZE) {
     PRINT_TRACE(" Using a small allocation.\n");
     // Make sure our sizer is working properly.
-    assert (get_small_size_class(size) != -1);
+    assert (get_small_size_class(size) != MAX_SIZE_T);
     // Now make a bin do the work
     // Note - the bin no longer cares about the size.
     PRINT_TRACE(" ...delegating to bin %zu (%d).\n", get_small_size_class(size), SMALL_CLASS_SIZES[get_small_size_class(size)]);
@@ -214,7 +214,7 @@ small_run_hdr* arena_chunk_hdr::carve_small_run(arena_bin* owner) {
   // Crawl the page map, looking for a place to fit
   // TODO: Use a tree implementation instead
   int ii;
-  for (ii = 1 ; ii < num_pages_allocated ; ii++) {
+  for (ii = num_pages_allocated-1 ; ii >= 0 ; ii--) {
     if (page_map[ii] == FREE) {
       page_map[ii] = SMALL_RUN_HEADER;
       small_run_hdr* new_page = (small_run_hdr*)get_page_location(ii);
@@ -288,6 +288,7 @@ void* arena_bin::malloc() {
   }
   assert(current_run != NULL);
   PRINT_TRACE("  Assigning this allocation to the run at %p.\n", current_run);
+  PRINT_TRACE("  ...which is serving objects of size %zu.\n", current_run->parent->object_size);
   // We're set up either way, so now we can just have the run malloc
   return current_run->malloc(); 
 }
