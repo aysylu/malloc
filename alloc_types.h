@@ -26,6 +26,15 @@
 #define PRINT_TRACE(...) // Do nothing
 #endif
 
+/**************
+ * Finalizers *
+ **************/
+
+// Our many awesome control structures must be created on the stack,
+// then written to the heap. This means no pointer initialization during 
+// the constructor! If you need to do pointer setup, do it in the 
+// object's finalize() method, which we agree to call only after it's
+// placed on the heap.
 
 /***********************
  * Critical Convention *
@@ -242,6 +251,8 @@ struct small_run_hdr {
   size_t free_cells; // How many free cells remain
   // Constructor
   small_run_hdr(arena_bin* _parent);
+  // Finalizer
+  void finalize();
   // Delegated malloc
   void* malloc();
 };

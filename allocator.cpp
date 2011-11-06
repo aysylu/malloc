@@ -4,7 +4,7 @@
 #include "allocator_interface.h"
 #include "memlib.h"
 #include "alloc_types.h"
-
+#include "visualizer.h"
 namespace my
 {
   /*
@@ -66,6 +66,7 @@ namespace my
   void * allocator::malloc(size_t size)
   {
     // Send this size to the lone arena for allocation
+    visualize_arena(((arena_hdr*)(mem_heap_lo())));
     return ((arena_hdr*)(mem_heap_lo()))->malloc(size);
   }
 
