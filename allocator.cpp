@@ -66,7 +66,6 @@ namespace my
   void * allocator::malloc(size_t size)
   {
     // Send this size to the lone arena for allocation
-    printf("Malloc!\n");
     return ((arena_hdr*)(mem_heap_lo()))->malloc(size);
   }
 

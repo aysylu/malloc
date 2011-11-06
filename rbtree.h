@@ -30,6 +30,9 @@
  * static node_t* tree_first(tree_t*)
  *    Find and return the minimum (smallest address) node in the tree.
  *    (Do not remove the node.)
+ * static node_t tree_next(tree_t*, node_t*)
+ *    Find and return the next larger node after the given node, or
+ *    NULL if you're at the end of the tree.
  */
 
 // RB node structure - just the pointers!
