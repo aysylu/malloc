@@ -119,7 +119,7 @@ struct arena_bin {
   // Constructor
   arena_bin(); // "Decoy constructor"
   arena_bin(arena_hdr* parent, size_t _object_size);
-  // Finalizer
+  // Finalizer - once this is heaped
   void finalize_trees();
 
   // Delegation of malloc

@@ -58,13 +58,20 @@ rb_gen(static, tree_, tree_t, node_t, link, nodeCmp);
 		    
 		    // Find minimum node.
 		    static node_t* tree_find_min(tree_t* inTree) {
+		      //printf("Searching tree %p.\n", inTree);
+		      //printf("...from root %p.\n", &(inTree->rbt_root));
 		      node_t* ret = tree_head(inTree);
 		      
 		      // If tree is empty...
 		      if (rbtn_left_get(node_t, link, ret) == rbtn_left_get(node_t, link, &inTree->rbt_nil))
 			return NULL;
 		      
+		      //printf("...and I don't think the tree is empty.\n");
+		      //printf("Nil node is %p.\n", &(inTree->rbt_nil));
+
 		      ret = rbtn_left_get(node_t, link, ret);
+
+		      //printf("Initial left lookup is %p.\n", ret);
 		      while (rbtn_left_get(node_t, link, ret) != &(inTree->rbt_nil)) {
 			//printf("Looking for min...\n");
 			//printf("  %p", &(inTree->rbt_nil));

@@ -1,8 +1,9 @@
 // See alloc_types.h for thorough documentation on classes and structure.
 #include <algorithm>
+#include <stdio.h> // The most useful debugger
 #include "alloc_types.h"
 #include "assert.h"
-#include "memlib.h" // USeful debugger
+#include "memlib.h" // Useful debugger
 
 /*********************
  * Utility Functions *
@@ -48,12 +49,9 @@ size_t get_num_chunks(size_t huge_allocation) {
 arena_hdr::arena_hdr() {
   free = NULL; // No free list initially
 
-  // Create and initialize a bin for each size class
-  int ii;
-  for (ii = 0 ; ii < NUM_SMALL_CLASSES ; ii++) {
-    bin_headers[ii] = arena_bin(this, (size_t)SMALL_CLASS_SIZES[ii]);
-    bin_headers[ii].finalize_trees();
-  }
+  // We really can't do anything else until we're on the heap.
+  // It's hard to give children a pointer to us otherwise.
+
   // That chunk has normal metadata for small/large assignments,
   // so we should put it in our tree. Again, node_t <-> any header type
   /// ...but we can't do this while we're still on the stack!
@@ -61,6 +59,12 @@ arena_hdr::arena_hdr() {
 
 // Called the moment we're allowed to work with the heap!
 void arena_hdr::finalize() {
+  // Now we have our final address, so we can initialize bins
+  int ii;
+  for (ii = 0 ; ii < NUM_SMALL_CLASSES ; ii++) {
+    bin_headers[ii] = arena_bin(this, (size_t)SMALL_CLASS_SIZES[ii]);
+    bin_headers[ii].finalize_trees();
+  }
   // Also create and initialize a chunk. We can find its address.
   assert((mem_heap_lo() <= this) && (this <= mem_heap_hi()));
   arena_chunk_hdr* new_address = (arena_chunk_hdr*)((byte*)this + ARENA_HDR_SIZE);
@@ -69,12 +73,13 @@ void arena_hdr::finalize() {
   *new_address = foo;
   // Take note that this, our first chunk, is the deepest chunk assigned.
   deepest = (byte*)new_address;
-
   tree_new(&normal_chunks);
 }
 
 void arena_hdr::insert_chunk(node_t* chunk) {
-  tree_insert(&this->normal_chunks, chunk);
+  assert((mem_heap_lo() <= chunk) && (chunk <= mem_heap_hi()));
+  assert((mem_heap_lo() <= &normal_chunks) && (&normal_chunks <= mem_heap_hi()));
+  tree_insert(&(normal_chunks), chunk);
 }
 
 // We need more space. We've got no chunks to expand. Let's try this.
@@ -125,6 +130,8 @@ void* arena_hdr::malloc(size_t size) {
 
 // Find a chunk that has a free page for a small run
 arena_chunk_hdr* arena_hdr::retrieve_normal_chunk() {
+  // We're getting corruption of normal_chunks; let's take extra care
+  assert((mem_heap_lo() <= &normal_chunks) && (&normal_chunks <= mem_heap_hi()));
   node_t* avail_chunk = tree_find_min(&normal_chunks);
   if (avail_chunk != NULL) {
     // OK, we found one, simply give it back
