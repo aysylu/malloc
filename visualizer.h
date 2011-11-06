@@ -29,6 +29,12 @@ inline size_t small_address_to_cell(small_run_hdr* this_hdr, byte* this_cell, si
  * Functions *
  *************/
 
+void visualize_arena(arena_hdr* this_arena) {
+  // Visualizes only the first chunk, because I said so.
+  // TODO: Visualize more chunks.
+  visualize_chunk((arena_chunk_hdr*)((byte*)this_arena + ARENA_HDR_SIZE));
+}
+
 void visualize_chunk(arena_chunk_hdr* this_chunk) {
   printf("Visualizing chunk at heap point %p\n", this_chunk);
   // To compute position in heap, we get our delta to the true heap bottom, and divide
@@ -38,10 +44,10 @@ void visualize_chunk(arena_chunk_hdr* this_chunk) {
   printf("Page map:\n");
 
   // Iterate over the page map, doing work
-  int ii;
+  size_t ii;
   for (ii=0 ; ii < this_chunk->num_pages_allocated ; ii++) {
     // Print page number
-    printf(" % 4d : ", ii);
+    printf(" % 4zu : ", ii);
     switch (this_chunk->page_map[ii]) {
       // Print trivial cases
     case HEADER:
@@ -71,16 +77,16 @@ void visualize_chunk(arena_chunk_hdr* this_chunk) {
   }
 }
 
-void visualize_large_run(arena_chunk_hdr* this_chunk, int this_page) {
+void visualize_large_run(arena_chunk_hdr* this_chunk, size_t this_page) {
   // Extract run location, convert to run header, analyze
-  large_run_hdr* this_hdr = (large_run_hdr *) get_page_location(this_chunk, this_page);
+  large_run_hdr* this_hdr = (large_run_hdr *) (this_chunk->get_page_location(this_page));
   printf("Large run begins, spanning %zu bytes (%zu pages).\n",
 	 (this_hdr->formal_size), (this_hdr->num_pages));
 }
 
-void visualize_small_run(arena_chunk_hdr* this_chunk, int this_page) {
+void visualize_small_run(arena_chunk_hdr* this_chunk, size_t this_page) {
   // Extract location etc.
-  small_run_hdr* this_hdr = (small_run_hdr *) get_page_location(this_chunk, this_page);
+  small_run_hdr* this_hdr = (small_run_hdr *) (this_chunk->get_page_location(this_page));
   size_t num_cells = this_hdr->parent->available_registrations;
   size_t object_size = this_hdr->parent->object_size;
 
@@ -104,14 +110,14 @@ void visualize_small_run(arena_chunk_hdr* this_chunk, int this_page) {
   }
 
   // Then follow the free list, marking those cells UNFILLED
-  block* follow_free = this_hdr->free;
+  byte* follow_free = this_hdr->free;
   size_t follow_free_cell;
   while (follow_free != NULL) {
     follow_free_cell = small_address_to_cell(this_hdr, follow_free, object_size);
     cells[follow_free_cell] = UNFILLED;
     // Since we're following the free list, we know the contents of a cell is 
     // a pointer to the next free cell or to NULL, and can follow it down
-    follow_free = (block*)(*follow_free);
+    follow_free = (byte*)(*follow_free);
   }
 
   // Print the visualization, up to 50 cells per line, using a single

@@ -170,6 +170,7 @@ struct arena_hdr {
 #define SMALL_RUN_FRAGMENT 5
 
 struct arena_chunk_hdr {
+  node_t chunk_tree_node; // Allows this to be part of an rbtree of runs for small/large assignments
   arena_hdr* parent; // Ptr to Arena
   size_t num_pages_available;
   size_t num_pages_allocated; // INITIAL_CHUNK_SIZE <= this <= FINAL_CHUNK_SIZE
