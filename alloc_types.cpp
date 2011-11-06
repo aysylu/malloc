@@ -226,7 +226,7 @@ void* arena_bin::malloc() {
       current_run = (small_run_hdr*)new_run;
     } else {
       // Get a chunk from our parent
-      arena_chunk_hdr* new_chunk = parent->retrieve_normal_chunk;
+      arena_chunk_hdr* new_chunk = (parent->retrieve_normal_chunk());
       // Ask the chunk to carve a new small run to fit us
       current_run = new_chunk->carve_small_run(this);
     }
