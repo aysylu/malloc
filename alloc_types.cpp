@@ -362,7 +362,7 @@ small_run_hdr* arena_chunk_hdr::carve_small_run(arena_bin* owner) {
     num_pages_available = (num_pages_allocated - old_allocation);
 
     // At this point, we know perfectly well the last N pages are fair game
-    int ii = num_pages_allocated - consec_pages + 1, jj;
+    int ii = num_pages_allocated - consec_pages, jj; // Imagine a +1, -1 there
     page_map[ii] = SMALL_RUN_HEADER;
     for (jj = 1 ; jj < consec_pages ; jj++) {
       page_map[ii+jj] = SMALL_RUN_FRAGMENT;
@@ -440,13 +440,16 @@ void* arena_bin::malloc() {
 	  // A new small run has been allocated for us. Move along.
 	  PRINT_TRACE("   ...succeeded, at %p.\n", new_address);
 	  current_run = (small_run_hdr*)new_address;
+	  break;
 	}
 	new_chunk = tree_next(&parent->normal_chunks, new_chunk);
       }
-      PRINT_TRACE("  Argh! There's not a single chunk we can work with.\n");
-      // More space! Parent, take care of it.
-      new_chunk = (node_t*)parent->add_normal_chunk();
-      current_run = ((arena_chunk_hdr*)new_chunk)->carve_small_run(this);
+      if (new_address == NULL) {
+	PRINT_TRACE("  Argh! There's not a single chunk we can work with.\n");
+	// More space! Parent, take care of it.
+	new_chunk = (node_t*)parent->add_normal_chunk();
+	current_run = ((arena_chunk_hdr*)new_chunk)->carve_small_run(this);
+      }
     }
   } else {
     PRINT_TRACE("  We're just going to use the current run at %p.\n", current_run);
