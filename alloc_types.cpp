@@ -140,7 +140,7 @@ void* arena_hdr::malloc(size_t size) {
 arena_chunk_hdr* arena_hdr::retrieve_normal_chunk() {
   // We're getting corruption of normal_chunks; let's take extra care
   assert((mem_heap_lo() <= &normal_chunks) && (&normal_chunks <= mem_heap_hi()));
-  node_t* avail_chunk = tree_find_min(&normal_chunks);
+  node_t* avail_chunk = tree_first(&normal_chunks);
   if (avail_chunk != NULL) {
     // OK, we found one, simply give it back
     return (arena_chunk_hdr*)avail_chunk;
@@ -201,7 +201,7 @@ small_run_hdr* arena_chunk_hdr::carve_small_run(arena_bin* owner) {
     if (num_pages_allocated < FINAL_CHUNK_PAGES) {
       PRINT_TRACE("   Growing this chunk.\n");
       // Let's get bigger and see how many new pages we have!
-      size_t old_allocation = num_pages_available;
+      size_t old_allocation = num_pages_allocated;
       num_pages_allocated = parent->grow(this);
       num_pages_available = (num_pages_allocated - old_allocation);
       PRINT_TRACE("   ...grown to %zu pages (%zu free).\n", num_pages_allocated, num_pages_available);
@@ -216,6 +216,7 @@ small_run_hdr* arena_chunk_hdr::carve_small_run(arena_bin* owner) {
   int ii;
   for (ii = 1 ; ii < num_pages_allocated ; ii++) {
     if (page_map[ii] == FREE) {
+      page_map[ii] = SMALL_RUN_HEADER;
       small_run_hdr* new_page = (small_run_hdr*)get_page_location(ii);
       PRINT_TRACE("   Installing new small run at %p.\n", new_page);
       *new_page = small_run_hdr(owner);
@@ -225,6 +226,7 @@ small_run_hdr* arena_chunk_hdr::carve_small_run(arena_bin* owner) {
       return new_page;
     }
   }
+  assert(0);
   // What? How did we get here, if there are no pages available!?
   return NULL;
   
@@ -270,7 +272,7 @@ void* arena_bin::malloc() {
   if (current_run == NULL) {
     PRINT_TRACE("  No current run; choosing from tree.\n");
     // All right, let's get a chunk from the tree then!
-    node_t* new_run = tree_find_min(&available_runs);
+    node_t* new_run = tree_first(&available_runs);
     if (new_run != NULL) {
       PRINT_TRACE("  ...got a run from the tree (%p).\n", new_run);
       current_run = (small_run_hdr*)new_run;
@@ -284,6 +286,7 @@ void* arena_bin::malloc() {
   } else {
     PRINT_TRACE("  We're just going to use the current run at %p.\n", current_run);
   }
+  assert(current_run != NULL);
   PRINT_TRACE("  Assigning this allocation to the run at %p.\n", current_run);
   // We're set up either way, so now we can just have the run malloc
   return current_run->malloc(); 
@@ -372,6 +375,6 @@ void* small_run_hdr::malloc() {
     // Bump up the never-used pointer for next time
     next += parent->object_size;
   }
-
+  PRINT_TRACE("    I got you an address: %p.\n", new_address);
   return (void*) new_address;
 }

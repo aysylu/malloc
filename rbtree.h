@@ -27,9 +27,12 @@
  *    Insert a node in the tree
  * static void tree_remove(tree_t*, node_t*)
  *    Remove a node from the tree
- * static node_t* tree_find_min(tree_t*)
+ * static node_t* tree_first(tree_t*)
  *    Find and return the minimum (smallest address) node in the tree.
  *    (Do not remove the node.)
+ * static node_t tree_next(tree_t*, node_t*)
+ *    Find and return the next larger node after the given node, or
+ *    NULL if you're at the end of the tree.
  */
 
 // RB node structure - just the pointers!
@@ -55,29 +58,5 @@ rb_gen(static, tree_, tree_t, node_t, link, nodeCmp);
 		    
 		    // Extract head node
 #define tree_head(x) ((x)->rbt_root)
-		    
-		    // Find minimum node.
-		    static node_t* tree_find_min(tree_t* inTree) {
-		      //printf("Searching tree %p.\n", inTree);
-		      //printf("...from root %p.\n", &(inTree->rbt_root));
-		      node_t* ret = tree_head(inTree);
-		      
-		      // If tree is empty...
-		      if (rbtn_left_get(node_t, link, ret) == rbtn_left_get(node_t, link, &inTree->rbt_nil))
-			return NULL;
-		      
-		      //printf("...and I don't think the tree is empty.\n");
-		      //printf("Nil node is %p.\n", &(inTree->rbt_nil));
 
-		      ret = rbtn_left_get(node_t, link, ret);
-
-		      //printf("Initial left lookup is %p.\n", ret);
-		      while (rbtn_left_get(node_t, link, ret) != &(inTree->rbt_nil)) {
-			//printf("Looking for min...\n");
-			//printf("  %p", &(inTree->rbt_nil));
-			//printf("  %p", rbtn_left_get(node_t, link, ret));
-			ret = rbtn_left_get(node_t, link, ret);
-		      }
-		      return ret;
-		    }
 #endif /* RBTREE_HEADER_GUARD */
