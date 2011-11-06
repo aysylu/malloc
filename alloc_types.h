@@ -5,7 +5,6 @@
 #include <string.h> // contains memset
 #include "rbtree.h"
 #include "memlib.h" // Single-threaded case only - grants access to sbrk
-#include "visualizer.h"
 
 #define MAX_SIZE_T (size_t)(-1)
 
@@ -121,12 +120,23 @@ typedef uint8_t byte;
 // This consumes some of our allotted stack space, but that's OK.
 // 56 bytes, in fact.
 const uint16_t SMALL_CLASS_SIZES[NUM_SMALL_CLASSES] = 
-  {8, 
-   16, 32, 48, 64, 80, 96, 112, 128,
-   192, 256, 320, 384, 448, 512,
-   768, 1024, 1280, 1536, 1792, 
+  {   8, 
+     16,   32,   48,   64,   80,   96,  112,  128,
+    192,  256,  320,  384,  448,  512,
+    768, 1024, 1280, 1536, 1792, 
    2048, 2304, 2560, 2816, 
    3072, 3328, 3584, 3840}; 
+
+// Some of the bigger small-class sizes really want extra pages
+// for their runs. This reduces fragmentation from rounding up.
+const uint8_t SMALL_CLASS_RUN_PAGE_USAGE[NUM_SMALL_CLASSES] =
+  {   1,
+      1,    1,    1,    1,    1,    1,    1,    1, 
+      1,    1,    1,    1,    1,    1,
+      1,    1,    1,    1,    2,
+      2,    2,    2,    2, 
+      3,    3,    3,    3
+  };
 
 /**********************
  * Arena Bin Metadata *
@@ -146,7 +156,7 @@ struct arena_bin {
 
   // Constructor
   arena_bin(); // "Decoy constructor"
-  arena_bin(arena_hdr* parent, size_t _object_size);
+  arena_bin(arena_hdr* parent, size_t _object_size, size_t num_pages);
   // Finalizer - once this is heaped
   void finalize_trees();
 

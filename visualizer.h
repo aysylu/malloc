@@ -1,6 +1,7 @@
 #ifndef VISUALIZER_HEADER_GUARD
 #define VISUALIZER_HEADER_GUARD
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h> // for memset
 #include "memlib.h"
@@ -79,14 +80,14 @@ void visualize_chunk(arena_chunk_hdr* this_chunk) {
 
 void visualize_large_run(arena_chunk_hdr* this_chunk, size_t this_page) {
   // Extract run location, convert to run header, analyze
-  large_run_hdr* this_hdr = (large_run_hdr *) (this_chunk->get_page_location(this_page));
+  large_run_hdr* this_hdr = (large_run_hdr *) (this_chunk->get_page_location((size_t)this_page));
   printf("Large run begins, spanning %zu pages.\n",
 	 (this_hdr->num_pages));
 }
 
 void visualize_small_run(arena_chunk_hdr* this_chunk, size_t this_page) {
   // Extract location etc.
-  small_run_hdr* this_hdr = (small_run_hdr *) (this_chunk->get_page_location(this_page));
+  small_run_hdr* this_hdr = (small_run_hdr *) (this_chunk->get_page_location((size_t)this_page));
   size_t num_cells = this_hdr->parent->available_registrations;
   size_t object_size = this_hdr->parent->object_size;
 
