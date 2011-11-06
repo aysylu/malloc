@@ -1,7 +1,7 @@
 #ifndef VISUALIZER_HEADER_GUARD
 #define VISUALIZER_HEADER_GUARD
 
-#include <stdint.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h> // for memset
 #include "memlib.h"
