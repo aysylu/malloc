@@ -216,6 +216,7 @@ small_run_hdr* arena_chunk_hdr::carve_small_run(arena_bin* owner) {
   int ii;
   for (ii = 1 ; ii < num_pages_allocated ; ii++) {
     if (page_map[ii] == FREE) {
+      page_map[ii] = SMALL_RUN_HEADER;
       small_run_hdr* new_page = (small_run_hdr*)get_page_location(ii);
       PRINT_TRACE("   Installing new small run at %p.\n", new_page);
       *new_page = small_run_hdr(owner);
@@ -372,6 +373,6 @@ void* small_run_hdr::malloc() {
     // Bump up the never-used pointer for next time
     next += parent->object_size;
   }
-
+  PRINT_TRACE("    I got you an address: %p.\n", new_address);
   return (void*) new_address;
 }
