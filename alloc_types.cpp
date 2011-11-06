@@ -20,11 +20,13 @@ size_t get_small_size_class(size_t real_size) {
   int i;
   // In ascending size order, look for smallest fit
   for(i=0; i<NUM_SMALL_CLASSES; i++) {
-    if (real_size <= SMALL_CLASS_SIZES[i]) 
+    if (real_size <= SMALL_CLASS_SIZES[i]) {
       return (i);
       // We don't want the size - we want the bin!
+    }
   }
   // PANIC! This doesn't actually fit in a small container!
+  assert(0); // Nothing to check here - we *did* screw up.
   return (size_t)(-1);
 }
 
@@ -119,7 +121,8 @@ void* arena_hdr::malloc(size_t size) {
     assert (get_small_size_class(size) != -1);
     // Now make a bin do the work
     // Note - the bin no longer cares about the size.
-    return bin_headers[get_small_size_class(size)].malloc();
+    size_t bin_index = get_small_size_class(size);
+    return bin_headers[bin_index].malloc();
   } else {
     // TODO: NOW: Make Large runs work
     // Look, I don't know, panic or something.
@@ -146,6 +149,8 @@ arena_chunk_hdr* arena_hdr::retrieve_normal_chunk() {
 
 // A chunk is full. Drop it.
 void arena_hdr::filled_chunk(node_t* filled) {
+  // Removing something not in the tree is bad!
+  assert(tree_search(&normal_chunks, filled) != NULL);
   tree_remove(&normal_chunks, filled);
 }
 
@@ -263,6 +268,7 @@ void* arena_bin::malloc() {
 
 // Note that a run is full and should not be considered for runs.
 void arena_bin::filled_run(node_t* full_run) {
+  assert(tree_search(&available_runs, full_run) != NULL);
   tree_remove(&available_runs, full_run);
   if (full_run == (node_t*) current_run) { // Not anymore!
     current_run = NULL;
