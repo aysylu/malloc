@@ -148,6 +148,8 @@ struct arena_hdr {
   arena_chunk_hdr* retrieve_normal_chunk();
   // Make a new chunk for small/large allocations
   arena_chunk_hdr* add_normal_chunk();
+  // Inserting a new chunk into the arena
+  void insert_chunk(node_t* chunk);
   // Note that a normal chunk is full
   void filled_chunk(node_t* chunk);
   // Grow a normal chunk to take up more space
