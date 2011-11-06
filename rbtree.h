@@ -52,20 +52,23 @@ static int nodeCmp(node_t* a_node, node_t* a_other) {
 typedef rbt(node_t) tree_t;
 // Do macros
 rb_gen(static, tree_, tree_t, node_t, link, nodeCmp);
-
+		    
 		    // Extract head node
-		    #define tree_head(x) ((x)->rbt_root)
-
+#define tree_head(x) ((x)->rbt_root)
+		    
 		    // Find minimum node.
 		    static node_t* tree_find_min(tree_t* inTree) {
 		      node_t* ret = tree_head(inTree);
-
+		      
 		      // If tree is empty...
-		      if (ret == &(inTree->rbt_nil))
+		      if (rbtn_left_get(node_t, link, ret) == rbtn_left_get(node_t, link, &inTree->rbt_nil))
 			return NULL;
-
+		      
 		      ret = rbtn_left_get(node_t, link, ret);
 		      while (rbtn_left_get(node_t, link, ret) != &(inTree->rbt_nil)) {
+			//printf("Looking for min...\n");
+			//printf("  %p", &(inTree->rbt_nil));
+			//printf("  %p", rbtn_left_get(node_t, link, ret));
 			ret = rbtn_left_get(node_t, link, ret);
 		      }
 		      return ret;

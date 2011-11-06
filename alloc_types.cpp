@@ -2,6 +2,7 @@
 #include <algorithm>
 #include "alloc_types.h"
 #include "assert.h"
+#include "memlib.h" // USeful debugger
 
 /*********************
  * Utility Functions *
@@ -21,7 +22,6 @@ size_t get_small_size_class(size_t real_size) {
     if (real_size <= SMALL_CLASS_SIZES[i]) 
       return (i);
       // We don't want the size - we want the bin!
-      //return SMALL_CLASS_SIZES[i+1];
   }
   // PANIC! This doesn't actually fit in a small container!
   return (size_t)(-1);
@@ -46,24 +46,31 @@ size_t get_num_chunks(size_t huge_allocation) {
  *********/
 
 arena_hdr::arena_hdr() {
-  // Tree types need no init
   free = NULL; // No free list initially
 
   // Create and initialize a bin for each size class
   int ii;
   for (ii = 0 ; ii < NUM_SMALL_CLASSES ; ii++) {
     bin_headers[ii] = arena_bin(this, (size_t)SMALL_CLASS_SIZES[ii]);
+    bin_headers[ii].finalize_trees();
   }
-  // Also create and initialize a chunk. We can find its address.
-  arena_chunk_hdr* new_address = (arena_chunk_hdr*)((byte*)this + ARENA_HDR_SIZE);
-  *new_address = arena_chunk_hdr(this);
-  
-  // Take note that this, our first chunk, is the deepest chunk assigned.
-  deepest = (byte*)new_address;
-
   // That chunk has normal metadata for small/large assignments,
   // so we should put it in our tree. Again, node_t <-> any header type
   /// ...but we can't do this while we're still on the stack!
+}
+
+// Called the moment we're allowed to work with the heap!
+void arena_hdr::finalize() {
+  // Also create and initialize a chunk. We can find its address.
+  assert((mem_heap_lo() <= this) && (this <= mem_heap_hi()));
+  arena_chunk_hdr* new_address = (arena_chunk_hdr*)((byte*)this + ARENA_HDR_SIZE);
+  arena_chunk_hdr foo = arena_chunk_hdr(this);
+  assert((mem_heap_lo() <= new_address) && (new_address <= mem_heap_hi()));
+  *new_address = foo;
+  // Take note that this, our first chunk, is the deepest chunk assigned.
+  deepest = (byte*)new_address;
+
+  tree_new(&normal_chunks);
 }
 
 void arena_hdr::insert_chunk(node_t* chunk) {
@@ -155,11 +162,14 @@ arena_chunk_hdr::arena_chunk_hdr(arena_hdr* _parent) {
   parent = _parent;
   num_pages_allocated = INITIAL_CHUNK_PAGES;
   num_pages_available = num_pages_allocated-1; // The header consumes one page
-  // No initialization needed for trees.
 
   // Initialize the page map
   memset(&page_map, FREE, (sizeof(uint8_t) * (FINAL_CHUNK_PAGES)));
   page_map[0] = HEADER;
+}
+
+void arena_chunk_hdr::finalize_trees() {
+  tree_new(&clean_page_runs);
 }
 
 // You have free pages. Someone needs a small run. Go for it.
@@ -215,10 +225,13 @@ arena_bin::arena_bin() {
 arena_bin::arena_bin(arena_hdr* _parent, size_t _object_size) {
   parent = _parent;
   current_run = NULL;
-  // available_runs is a tree_t that needs no initialization
   object_size = _object_size;
   run_length = PAGE_SIZE; // TODO: Assign multiple pages to runs of larger objects
   available_registrations = (PAGE_SIZE - SMALL_RUN_HDR_SIZE) / object_size;
+}
+
+void arena_bin::finalize_trees() {
+  tree_new(&available_runs);
 }
 
 // Delegated malloc. Sorry, you're it - you're going to have to figure it out.

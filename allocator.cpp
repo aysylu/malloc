@@ -43,15 +43,18 @@ namespace my
     // Allocate memory for an arena header and its first chunk
     // Conveniently, this is just under our slackness limit.
     size_t initial_allocation = ARENA_HDR_SIZE + INITIAL_CHUNK_SIZE;
-    void* new_mem = mem_sbrk(initial_allocation);
+    byte* new_mem = (byte*)mem_sbrk(initial_allocation);
     if (new_mem == NULL) {
       return -1; // Panic! Not out fault!
     }
+    
     // Write in the arena header; chunk header written by arena initializer
-    *((arena_hdr*) mem_heap_lo()) = arena_hdr();
-    // Arena has written in a chunk header
-    // Now that it's on the heap, we should make it aware of the chunk too
-    ((arena_hdr*) mem_heap_lo())->insert_chunk((node_t*) ((byte*)(mem_heap_lo()) + ARENA_HDR_SIZE));
+    arena_hdr* this_arena = (arena_hdr*)mem_heap_lo();
+
+    *this_arena = arena_hdr();
+    // Now that it's on the heap, we can finish initialization
+    this_arena->finalize();
+    this_arena->insert_chunk((node_t*) ((byte*)(mem_heap_lo()) + ARENA_HDR_SIZE));
     // If we had failed, exceptions would have appeared elsewhere.
     return 0;
   }

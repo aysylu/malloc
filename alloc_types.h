@@ -21,6 +21,9 @@
 // at the cost of introducing a type-safety issue. Accordingly, these type
 // conversions are done in one place whenenver possible.
 
+// Trees cannot be finalized with tree_new until the constructed object has been
+// written to the heap. Take care.
+
 /*********************
  * Prototype structs *
  *********************/
@@ -116,6 +119,8 @@ struct arena_bin {
   // Constructor
   arena_bin(); // "Decoy constructor"
   arena_bin(arena_hdr* parent, size_t _object_size);
+  // Finalizer
+  void finalize_trees();
 
   // Delegation of malloc
   void* malloc();
@@ -143,6 +148,11 @@ struct arena_hdr {
 
   // Constructor
   arena_hdr();
+  // Some parts of construction can only be done once this is heapified, since they
+  // themselves require heap. This includes bin construction and trees
+  void finalize();
+
+  // Delegated malloc
   void* malloc(size_t size);
   // Find a chunk with space
   arena_chunk_hdr* retrieve_normal_chunk();
@@ -182,6 +192,8 @@ struct arena_chunk_hdr {
   // Note above - header data occupies the first free page slot.
   // Constructor
   arena_chunk_hdr(arena_hdr* _parent);
+  void finalize_trees();
+
   // Expand heap by one chunk size, allocating the chunk for small or large page runs
   arena_chunk_hdr* add_normal_chunk();
   // Converter routines between page index and page address
