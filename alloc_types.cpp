@@ -5,6 +5,17 @@
 #include "assert.h"
 #include "memlib.h" // Useful debugger
 
+// Currently, let's always use DEBUG_PRINT_TRACE if DEBUG is set
+#ifdef DEBUG
+#define DEBUG_PRINT_TRACE
+#endif
+
+#ifdef DEBUG_PRINT_TRACE
+#define PRINT_TRACE(...) printf( __VA_ARGS__ )
+#else
+#define PRINT_TRACE(...) do {} while (0)
+#endif
+
 /*********************
  * Utility Functions *
  *********************/
