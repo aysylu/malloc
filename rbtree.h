@@ -29,7 +29,7 @@
  *    Remove a node from the tree
  * static node_t* tree_find_min(tree_t*)
  *    Find and return the minimum (smallest address) node in the tree.
- *    Do not remove the node.
+ *    (Do not remove the node.)
  */
 
 // RB node structure - just the pointers!
@@ -59,11 +59,10 @@ rb_gen(static, tree_, tree_t, node_t, link, nodeCmp);
 		    // Find minimum node.
 		    static node_t* tree_find_min(tree_t* inTree) {
 		      node_t* ret = tree_head(inTree);
-		      // You really shouldn't be min-finding an empty tree.
-		      // Whether it's for use or deletion, it'll be painful no matter what.
-		      //assert(ret != &(inTree->rbt_nil));
-		      if (rbtn_left_get(node_t, link, ret) == &(inTree->rbt_nil))
-			return ret;
+
+		      // If tree is empty...
+		      if (ret == &(inTree->rbt_nil))
+			return NULL;
 
 		      ret = rbtn_left_get(node_t, link, ret);
 		      while (rbtn_left_get(node_t, link, ret) != &(inTree->rbt_nil)) {
