@@ -117,20 +117,28 @@ void* arena_hdr::malloc(size_t size) {
 
     PRINT_TRACE(" Using a HUGE allocation.\n");
     size_t num_chunks = get_num_chunks(size);
+    PRINT_TRACE(" Number of chunks is %lu\n", num_chunks);
     if (free != NULL) {
       // TODO: Try to pull something from the free list
+      // TODO: We currently don't have a free list for chunks
+      // Later we'll have a structure that coalesces chunks
+      // and uses them to allocate huge objects
+      PRINT_TRACE(" The free list has some space; try to pull something from the free list");
     }
     // Uh-oh. The free list couldn't help us. This needs a *new chunk*.
     // Arena is going to demand new space on the heap! Single thread, everything fine.
     PRINT_TRACE(" Creating a new chunk for this allocation.\n");
     void* new_heap = mem_sbrk(num_chunks * FINAL_CHUNK_SIZE);
+    PRINT_TRACE(" Increased the heap by %lu\n", num_chunks * FINAL_CHUNK_SIZE);
     assert(new_heap != NULL);
     // Write a new huge_run_hdr into the new space.
     *(huge_run_hdr*)new_heap = huge_run_hdr(size, num_chunks);
     // Take note of the deepst object assigned
     deepest = (byte*)new_heap;
     // OK, header in place - let's give them back the pointer, skipping the header
-    return (void*) ((byte*) new_heap + HUGE_RUN_HDR_SIZE);
+    void* new_address = ((byte*) new_heap + HUGE_RUN_HDR_SIZE);
+    PRINT_TRACE(" ...succeeded, at %p.\n", new_address);
+    return (void*) (new_address);
 
   } else if (size <= MAX_SMALL_SIZE) {
 
