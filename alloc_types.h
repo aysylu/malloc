@@ -5,6 +5,7 @@
 #include <string.h> // contains memset
 #include "rbtree.h"
 #include "memlib.h" // Single-threaded case only - grants access to sbrk
+#include "visualizer.h"
 
 #define MAX_SIZE_T (size_t)(-1)
 
@@ -225,13 +226,13 @@ struct arena_chunk_hdr {
   arena_chunk_hdr(arena_hdr* _parent);
   void finalize_trees();
 
+  // Converter routines between page index and page address
+  inline byte* get_page_location(size_t page_no);
+  inline size_t get_page_index(byte* page_addr);
   // Expand heap by one chunk size, allocating the chunk for small or large page runs
   arena_chunk_hdr* add_normal_chunk();
   // Find a run of N consecutive pages to fit a Large allocation.
   void* fit_large_run(size_t consec_pages);
-  // Converter routines between page index and page address
-  inline byte* get_page_location(size_t page_no);
-  inline size_t get_page_index(byte* page_addr);
   // Find an unassigned page, write a small run header, and give it back
   small_run_hdr* carve_small_run(arena_bin* owner);
 };
