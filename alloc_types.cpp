@@ -296,56 +296,54 @@ small_run_hdr* arena_chunk_hdr::carve_small_run(arena_bin* owner) {
 
   size_t consec_pages = owner->run_length / PAGE_SIZE;
 
-  if (consec_pages > num_pages_available) {
-    // Grow
-  }
-
-  /*
-  if (num_pages_available == 0) {
-    // Two options. Either we grow, or we ask to be removed from the availability list.
-    if (num_pages_allocated < FINAL_CHUNK_PAGES) {
-      PRINT_TRACE("   Growing this chunk.\n");
-      // Let's get bigger and see how many new pages we have!
-      size_t old_allocation = num_pages_allocated;
-      num_pages_allocated = parent->grow(this);
-      num_pages_available = (num_pages_allocated - old_allocation);
-      PRINT_TRACE("   ...grown to %zu pages (%zu free).\n", num_pages_allocated, num_pages_available);
-    } else {
-      PRINT_TRACE("   ...can't grow; removing from available-page tree.\n");
-      parent->filled_chunk((node_t*)this);
-    }
-    }*/
-
-  // Crawl the page map, looking for a place to fit
-  // TODO: Use a tree implementation instead
-  int consec = 0;
-  int ii;
-  for (ii = num_pages_allocated-1 ; ii >= 0 ; ii--) {
-    if (page_map[ii] == FREE) {
-      consec++;
-      if (consec == consec_pages) {
-	PRINT_TRACE("   We've found consecutive slots for the small allocation.\n");
-	PRINT_TRACE("  %zu of them, starting at %d (%p)\n", consec_pages, ii, get_page_location(ii));
-	small_run_hdr* new_page = (small_run_hdr*)get_page_location(ii);
-	PRINT_TRACE("   Installing new small run at %p.\n", new_page);
-	*new_page = small_run_hdr(owner);
-	new_page->finalize();
-	page_map[ii] = SMALL_RUN_HEADER;
-	
-	int jj; 
-	for (jj = 1 ; jj < consec_pages ; jj++) {
-	  page_map[ii+jj] = SMALL_RUN_FRAGMENT;
+  if (consec_pages < num_pages_available) {
+    // We can at least try to fit
+    
+    // Crawl the page map, looking for a place to fit
+    // TODO: Use a tree implementation instead
+    int consec = 0;
+    int ii;
+    for (ii = num_pages_allocated-1 ; ii >= 0 ; ii--) {
+      if (page_map[ii] == FREE) {
+	consec++;
+	if (consec == consec_pages) {
+	  PRINT_TRACE("   We've found consecutive slots for the small allocation.\n");
+	  PRINT_TRACE("  %zu of them, starting at %d (%p)\n", consec_pages, ii, get_page_location(ii));
+	  small_run_hdr* new_page = (small_run_hdr*)get_page_location(ii);
+	  PRINT_TRACE("   Installing new small run at %p.\n", new_page);
+	  *new_page = small_run_hdr(owner);
+	  new_page->finalize();
+	  page_map[ii] = SMALL_RUN_HEADER;
+	  
+	  int jj; 
+	  for (jj = 1 ; jj < consec_pages ; jj++) {
+	    page_map[ii+jj] = SMALL_RUN_FRAGMENT;
+	  }
+	  // Let's finish the construction properly by making it available
+	  // to the owner of bins of that size
+	  owner->run_available((node_t*) new_page);
+	  num_pages_available -= consec_pages;
+	  return new_page;
+	} else {
+	  consec = 0;
 	}
-	// Let's finish the construction properly by making it available
-	// to the owner of bins of that size
-	owner->run_available((node_t*) new_page);
-	num_pages_available -= consec_pages;
-	return new_page;
-      } else {
-	consec = 0;
       }
     }
   }
+  // Well, that didn't help. How about growing? Does that help?
+  if (num_pages_available + (FINAL_CHUNK_PAGES - num_pages_allocated) > consec_pages) {
+    PRINT_TRACE("   Growing chunk for small run.\n");
+    size_t old_allocation = num_pages_allocated;
+    while ((num_pages_allocated - old_allocation) < consec_pages) {
+      num_pages_allocated = parent->grow(this);
+      PRINT_TRACE("  ...%zu big...\n", num_pages_allocated);
+    }
+    num_pages_available = (num_pages_allocated - old_allocation);
+  } else {
+    PRINT_TRACE("   Even a grown chunk won't fit this; try somewhere else.\n");
+    return NULL;
+  }
+  
   // Sorry, friend. You'll have to go somewhere else.
   return NULL;  
 }
