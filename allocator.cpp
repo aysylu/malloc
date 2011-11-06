@@ -50,6 +50,8 @@ namespace my
     // Write in the arena header; chunk header written by arena initializer
     *((arena_hdr*) mem_heap_lo()) = arena_hdr();
     // Arena has written in a chunk header
+    // Now that it's on the heap, we should make it aware of the chunk too
+    ((arena_hdr*) mem_heap_lo())->insert_chunk((node_t*) ((byte*)(mem_heap_lo()) + ARENA_HDR_SIZE));
     // If we had failed, exceptions would have appeared elsewhere.
     return 0;
   }

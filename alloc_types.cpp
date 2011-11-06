@@ -63,14 +63,19 @@ arena_hdr::arena_hdr() {
 
   // That chunk has normal metadata for small/large assignments,
   // so we should put it in our tree. Again, node_t <-> any header type
-  tree_insert(&this->normal_chunks, (node_t*)new_address);
+  /// ...but we can't do this while we're still on the stack!
 }
 
-// We need more space. The arena asserts it can expand a chunk.
+void arena_hdr::insert_chunk(node_t* chunk) {
+  tree_insert(&this->normal_chunks, chunk);
+}
+
+// We need more space. We've got no chunks to expand. Let's try this.
 arena_chunk_hdr* arena_hdr::add_normal_chunk() {
   arena_chunk_hdr* new_chunk = (arena_chunk_hdr*)mem_sbrk(INITIAL_CHUNK_SIZE);
   *new_chunk = arena_chunk_hdr(this);
   deepest = (byte*)new_chunk; // Take note that this is now the deepst chunk
+  insert_chunk((node_t*) new_chunk); // Also, it's new and has space in it
   return new_chunk;
 }
 
