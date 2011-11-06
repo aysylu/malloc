@@ -28,6 +28,11 @@
 #define IS_ALIGNED(p)  ((((uint32_t)(p)) % ALIGNMENT) == 0)
 #endif
 
+/*
+ * IMPORTANT: this implementation returns 0 if there's an error
+ *                                        1 if no errors
+ */
+
 /***************************
  * Range list data structure
  **************************/
@@ -106,7 +111,7 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
    */
   p->lo = lo;
   p->hi = hi;
-  (*ranges)->next = p;
+  range->next = p;
 
   return 1;
 }
@@ -221,6 +226,10 @@ int eval_mm_valid(Type *impl, trace_t *trace, int tracenum)
          * for if the region is copied via realloc.
          */
         /* YOUR CODE HERE */
+        //TODO: think if any particular sequence is better to use
+        // or we should avoid using this one
+        memset(p->lo, 0xA5, p->hi - p->lo + 1);
+        
 
         /* Remember region */
         trace->blocks[index] = p;
@@ -251,8 +260,9 @@ int eval_mm_valid(Type *impl, trace_t *trace, int tracenum)
         if (size < oldsize)
           oldsize = size;
         /* YOUR CODE HERE */
-        for (int i = 0; i < size; ++i) {
-          
+        if (memcmp(newp->lo, oldp->lo, oldsize) != 0) {
+          malloc_error(tracenum, i, "newly allocated memory has different content than the one before reallocation.");
+          return 0;
         }
 
         /* Remember region */
