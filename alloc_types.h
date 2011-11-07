@@ -169,7 +169,7 @@ struct arena_bin {
   // Finalizer - once this is heaped
   void finalize_trees();
 
-  // Delegation of check
+  // Internal consistency checker
   int check();
   // Delegation of malloc
   void* malloc();
@@ -254,6 +254,8 @@ struct arena_chunk_hdr {
   // Constructor
   arena_chunk_hdr(arena_hdr* _parent);
   void finalize_trees();
+  // Internal consistency checker
+  int check();
 
   // It can't malloc directly, but it does have free and realloc responsibilities
   void free(void* ptr);
@@ -291,7 +293,7 @@ struct small_run_hdr {
   // Finalizer
   void finalize();
 
-  // Delegated check
+  // Internal consistency check
   int check();
   // Delegated malloc, free, realloc
   void* malloc();

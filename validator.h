@@ -61,7 +61,7 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
 			int size, int tracenum, int opnum)
 {
   char *hi = lo + size - 1;
-//  range_t *p = NULL;
+  range_t * p = (range_t *)malloc(sizeof(range_t));
 
   /* You can use this as a buffer for writing messages with sprintf. */
   char msg[MAXLINE];
@@ -69,8 +69,7 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
   assert(size > 0);
 
   /* Payload addresses must be ALIGNMENT-byte aligned */
-  /* YOUR CODE HERE */
-  //TODO: we don't check whether hi address is aligned or not because we have no way of knowing what is the high address that has been passed to us
+  //We don't check whether hi address is aligned or not because we have no way of knowing what is the high address that has been passed to us
   if (!IS_ALIGNED(lo)) {
     int ret = sprintf(msg, "Payload addresses %p and %p are not aligned\n", lo, hi);
     printf("%s", msg);
@@ -78,7 +77,6 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
   }
 
   /* The payload must lie within the extent of the heap */
-  /* YOUR CODE HERE */
   if (lo <= mem_heap_lo() || hi >= mem_heap_hi()) {
     int ret = sprintf(msg, "Payload must lie within the extent of the heap; the payload addresses are %p and %p, and the heapsize is %lu\n", lo, hi, mem_heapsize());
     printf("%s", msg);
@@ -86,13 +84,14 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
   }
 
   /* The payload must not overlap any other payloads */
-  /* YOUR CODE HERE */
   // Get the range in ranges
   range_t *range = *ranges;
 
   if (range == NULL) {
-    range_t p = {.lo = lo, .hi = hi, .next = NULL};
-    *ranges = &p;
+    p->lo = lo;
+    p->hi = hi;
+    p->next = NULL;
+    *ranges = p;
   } else {
 
     range_t *prev = NULL;
@@ -118,8 +117,11 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
     /* Everything looks OK, so remember the extent of this block by creating a
      * range struct and adding it the range list.
      */
-    range_t p = {.lo = lo, .hi = hi, .next = NULL};
-    prev->next = &p;
+    //range_t p = {.lo = lo, .hi = hi, .next = NULL};
+    p->lo = lo;
+    p->hi = hi;
+    p->next = NULL;
+    prev->next = p;
   }
 
   return 1;
@@ -130,28 +132,30 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
  */
 static void remove_range(range_t **ranges, char *lo)
 {
-  range_t *p = NULL;
-  range_t **prevpp = ranges;
+//  range_t **prevpp = ranges;
 
   /* Iterate the linked list until you find the range with a matching lo
    * payload and remove it.  Remember to properly handle the case where the
    * payload is in the first node, and to free the node after unlinking it.
    */
-  if (prevpp == NULL) {
+
+  range_t * curr = *ranges;
+
+  // If the list of ranges is empty, there's nothing to find and remove
+  if (curr == NULL) {
     return;
   }
 
   // We keep track of the curr and prev elements
   // to be able to unlink and relink nodes
-  range_t *curr = *prevpp;
   range_t *prev = NULL;
   while (curr != NULL) {
     if (curr->lo == lo) {
       // Match found, remove the node
-      if (curr == *prevpp) {
+      if (curr == *ranges) {
         // The address lo matches the head of the list
         // Set the head of the list to curr.next
-        ranges = &(curr->next);
+        *ranges = curr->next;
         // Free the node after unlinking it
         free(curr);
         return;
@@ -234,12 +238,14 @@ int eval_mm_valid(Type *impl, trace_t *trace, int tracenum)
         /* Fill the allocated region with some unique data that you can check
          * for if the region is copied via realloc.
          */
-        /* YOUR CODE HERE */
-        //TODO: think if any particular sequence is better to use
-        // or we should avoid using this one
         assert(p != NULL);
-        memset((char *) p, 0xA5, *p + size - 1);
 
+        // prev range_t contains the most recently allocated range
+        memset(p, 0xA5, size);
+
+        for (int i=0; i < oldsize; i++) {
+          assert((*(newp + i) == 0xA5));
+        }
         /* Remember region */
         trace->blocks[index] = p;
         trace->block_sizes[index] = size;
@@ -268,11 +274,16 @@ int eval_mm_valid(Type *impl, trace_t *trace, int tracenum)
         oldsize = trace->block_sizes[index];
         if (size < oldsize)
           oldsize = size;
-        /* YOUR CODE HERE */
-        if (memcmp(newp, oldp, oldsize) != 0) {
-          malloc_error(tracenum, i, "newly allocated memory has different content than the one before reallocation.");
-          return 0;
-        }
+
+          for (int i=0; i < oldsize; i++) {
+            printf("newp=%f\n", *(double *)(newp + i));
+            if (*(newp + i) != 0xA5) {
+              malloc_error(tracenum, i, "newly allocated memory has different content than the one before reallocation.");
+              return 0;
+            }
+          }
+
+        memset(newp, 0xA5, size);
 
         /* Remember region */
         trace->blocks[index] = newp;
