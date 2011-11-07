@@ -518,8 +518,8 @@ void* arena_chunk_hdr::realloc(void* ptr, size_t size, size_t old_size) {
 	 (page_map[bin] == SMALL_RUN_FRAGMENT) ||
 	 (page_map[bin] == LARGE_RUN_HEADER));
   if (page_map[bin] == LARGE_RUN_HEADER) {
-    // Possible early termination - we want to go from Large to small
-    if (size < MAX_SMALL_SIZE)
+    // Possible early termination - we want to go from Large to small or HUGE
+    if ((size < MAX_SMALL_SIZE) || (size > MAX_LARGE_SIZE))
       return NULL;
     // OK, we're dealing with a Large run. Three cases, same as HUGE
     size_t old_size_pages = ((large_run_hdr*)get_page_location(bin))->num_pages;
@@ -1003,5 +1003,15 @@ void small_run_hdr::free(void* ptr) {
   if (free_cells == 1) {
     // This indicates we were full. We're not anymore, so mark us available.
     parent->run_available((node_t*)this);
+  }
+}
+
+void* small_run_hdr::realloc(void* ptr, size_t size, size_t old_size) {
+  // We're only interested in doing reallocation work if the size shrinks a *lot*.
+  if ((size > old_size) || (old_size / size < 2))
+    return NULL;
+  else {
+    // New size is smaller, shrinking by a factor of 2 or more
+    return ptr;
   }
 }
