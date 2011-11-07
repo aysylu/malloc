@@ -349,6 +349,7 @@ size_t arena_hdr::size_of_alloc(void* ptr) {
 arena_chunk_hdr* arena_hdr::retrieve_normal_chunk() {
   // We're getting corruption of normal_chunks; let's take extra care
   assert((mem_heap_lo() <= &normal_chunks) && (&normal_chunks <= mem_heap_hi()));
+
   node_t* avail_chunk = tree_first(&normal_chunks);
   if (avail_chunk != NULL) {
     // OK, we found one, simply give it back
@@ -367,11 +368,23 @@ arena_chunk_hdr* arena_hdr::retrieve_normal_chunk() {
 arena_chunk_hdr* arena_hdr::add_normal_chunk() {
   // We know we've currently got heap up to a chunk limit - if we didn't,
   // we would have grown a small chunk.
-  arena_chunk_hdr* new_chunk = (arena_chunk_hdr*)mem_sbrk(INITIAL_CHUNK_SIZE);
-  *new_chunk = arena_chunk_hdr(this);
-  deepest = (size_t*)new_chunk; // Take note that this is now the deepst chunk
-  insert_chunk((node_t*) new_chunk); // Also, it's new and has space in it
+
+  // We might have something on the free list. That would be good.
+  arena_chunk_hdr* new_chunk;
+  if (free_list != NULL) {
+    new_chunk = (arena_chunk_hdr*)free_list;
+    // Bind the free list head to its next element
+    free_list = *(size_t**)free_list;
+    *new_chunk = arena_chunk_hdr(this);
+    insert_chunk((node_t*)new_chunk);
+    return new_chunk;
+  } else {
+    new_chunk = (arena_chunk_hdr*)mem_sbrk(INITIAL_CHUNK_SIZE);
+    *new_chunk = arena_chunk_hdr(this);
+    deepest = (size_t*)new_chunk; // Take note that this is now the deepst chunk
+    insert_chunk((node_t*)new_chunk); // Also, it's new and has space in it
   return new_chunk;
+  }
 }
 
 void arena_hdr::insert_chunk(node_t* chunk) {
