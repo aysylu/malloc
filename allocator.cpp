@@ -100,7 +100,6 @@ namespace my
   void * allocator::realloc(void *ptr, size_t size)
   {
     void *newptr;
-    size_t copy_size;
 
     /* Look for special case - reallocate a pointer to zero size -> free */
     if (size == 0) {
@@ -110,33 +109,45 @@ namespace my
       return NULL;
     }
 
-    /* Allocate a new chunk of memory, and fail if that allocation fails. */
-    newptr = malloc(size);
-    if (NULL == newptr)
-      return NULL;
-
     /* Look for special case - reallocate a null pointer -> malloc */
     if (ptr == NULL) {
-      return newptr; // return malloc(size)
+      return malloc(size); // return malloc(size)
     }
     
     /* Do a proper reallocation */
-    size_t alloc_size = ((arena_hdr*)(mem_heap_lo()))->size_of_alloc(ptr);
-    printf("Asked for a realloc on %zu bytes.\n", alloc_size);
+
+    size_t old_size = ((arena_hdr*)(mem_heap_lo()))->size_of_alloc(ptr);
+    printf("Asked for a realloc on %zu bytes.\n", old_size);
+
+    /* We can ask subordinate routines to try to do clever reallocation. */
+    /* If they fail, they will return NULL as a signal that we need to do a big,
+       slow malloc-copy-free to solve the problem. */
+
+    void* reallocated_ptr = ((arena_hdr*)(mem_heap_lo()))->realloc(ptr, size, old_size);
+    if (reallocated_ptr != NULL) {
+      // This indicates something clever succeeded.
+      return reallocated_ptr;
+    }
+
+    /* All right, do a malloc-copy-free */
+
+    /* Allocate a new chunk of memory, and fail if that allocation fails. */
+    newptr = malloc(size);
+    if (newptr == NULL)
+      return NULL;
 
     /* Get the size of the old block of memory.  Take a peek at malloc(),
        where we stashed this in the SIZE_T_SIZE bytes directly before the
        address we returned.  Now we can back up by that many bytes and read
        the size. */
-    copy_size = *(size_t*)((uint8_t*)ptr - SIZE_T_SIZE);
 
     /* If the new block is smaller than the old one, we have to stop copying
        early so that we don't write off the end of the new block of memory. */
-    if (size < copy_size)
-      copy_size = size;
+    if (size < old_size)
+      old_size = size;
 
     /* This is a standard library call that performs a simple memory copy. */
-    std::memcpy(newptr, ptr, copy_size);
+    std::memcpy(newptr, ptr, old_size);
 
     /* Release the old block. */
     free(ptr);

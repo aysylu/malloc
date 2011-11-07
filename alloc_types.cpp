@@ -31,6 +31,16 @@ size_t get_small_size_class(size_t real_size) {
   return MAX_SIZE_T;
 }
 
+// Take a set of chunks that you're about to free. Write internal linked-list pointers
+// so that the first_index-th chunk points to the (first_index+1)th chunk....
+// ...(last_index-1)th chunk points to the last_index-th chunk
+void internally_link_chunks(size_t* first_chunk, size_t first_index, size_t last_index) {
+  size_t ii;
+  for (ii = first_index ; ii < (last_index - 1) ; ii++ ) {
+    *(size_t**)(((byte*)first_chunk) + FINAL_CHUNK_SIZE * ii) = (size_t*)((byte*)(first_chunk) + FINAL_CHUNK_SIZE * (ii+1));
+  }
+}
+
 // Get how many chunks are necessary for a HUGE allocation request
 size_t get_num_chunks(size_t huge_allocation) {
   int num_chunks = 1;
@@ -238,17 +248,10 @@ void arena_hdr::free(void* ptr) {
     // We keep the free list sorted for contiguity checks. 
     // Assemble the free list links
     PRINT_TRACE(" Writing %zu internal headers.\n", (header->num_chunks -1));
-    int ii;
-    for (ii = 0 ; ii < (header->num_chunks - 1) ; ii++) {
-      // Write the address of the next free chunk at the top of this free chunk
-      // ...by casting as a pointer to a pointer, and writing a pointer to it
-      PRINT_TRACE("  ...at %p, linking %p...\n", ((byte*)(header)) + FINAL_CHUNK_SIZE * ii, (size_t*)((byte*)(header) + FINAL_CHUNK_SIZE * (ii+1)));
-      *(size_t**)(((byte*)(header)) + FINAL_CHUNK_SIZE * ii) = (size_t*)((byte*)(header) + FINAL_CHUNK_SIZE * (ii+1));
-    }
-
+    internally_link_chunks((size_t*)header, 0, header->num_chunks);
     // Also, save the first link target and last link site to help us
     // The first chunk link address is just the header
-    size_t** last_chunk_link_site = (size_t**)(((byte*)(header)) + FINAL_CHUNK_SIZE * ii);
+    size_t** last_chunk_link_site = (size_t**)(((byte*)(header)) + FINAL_CHUNK_SIZE * (header->num_chunks-1));
     
     if (free_list == NULL) {
       PRINT_TRACE(" Creating a chunk free list.\n");
@@ -276,6 +279,87 @@ void arena_hdr::free(void* ptr) {
     PRINT_TRACE("...I think chunk %p (%zu chunks forward) will do.\n", owning_chunk, header_offset/FINAL_CHUNK_SIZE);
     // Delegate!
     owning_chunk->free(ptr);
+  }
+}
+
+void* arena_hdr::realloc(void* ptr, size_t size, size_t old_size) {
+  size_t header_offset = ((byte*)ptr - (byte*)this - ARENA_HDR_SIZE);
+  
+  if (header_offset % FINAL_CHUNK_SIZE <= PAGE_SIZE ) {
+    // If the new size isn't huge, no cleverness possible.
+    if (size < MAX_LARGE_SIZE)
+      return NULL;
+
+    PRINT_TRACE("Trying clever realloc on a HUGE allocation.\n");
+    // This is a huge allocation, and at this level we can decide what
+    // to do with the chunks
+    huge_run_hdr* header = (huge_run_hdr*)(((byte*)(ptr)) - HUGE_RUN_HDR_SIZE);
+    size_t new_size_chunks = get_num_chunks(size);
+    size_t old_size_chunks = get_num_chunks(old_size);
+    if (new_size_chunks == old_size_chunks) {
+      PRINT_TRACE("Size is close enough; aborting.\n");
+      // Awesome! Nothing to be done. It goes in the same place.
+      return ptr;
+    
+    } else if (new_size_chunks < old_size_chunks) {
+      PRINT_TRACE("Realloc is much smaller; shrinking.\n");
+      // Update header of this allocation
+      header->num_chunks = new_size_chunks;
+      // Internally link chunks for insertion onto free list
+      PRINT_TRACE(" Writing %zu internal headers.\n", (old_size_chunks - new_size_chunks - 1));
+      internally_link_chunks((size_t*)header, new_size_chunks, old_size_chunks);
+      // Put chunks on the free list
+      size_t** last_chunk_link_site = (size_t**)(((byte*)(header)) + FINAL_CHUNK_SIZE * (old_size_chunks-1));      
+
+      if (free_list == NULL) {
+	PRINT_TRACE(" Creating a chunk free list.\n");
+	// Attach out segment to the free list
+	free_list = (size_t*)header;
+	*last_chunk_link_site = NULL;
+      } else {
+	PRINT_TRACE(" Hey, we already have a free list!\n");
+	size_t * curr = *(size_t**)free_list;
+	size_t * prev = free_list;
+	PRINT_TRACE(" Recursing free list...\n");
+	
+	while ((curr != NULL) && (curr < (size_t*)header)) {
+	  prev = curr;
+	  curr = (size_t *) *curr;
+	}
+	
+	*(size_t **)(prev) = (size_t *)header;
+	*(size_t **)last_chunk_link_site = (size_t *)(curr);
+      }
+      // We resized down, but you can keep the pointer
+      return ptr;
+    
+    } else { // new_size_chunks > old_size_chunks
+      PRINT_TRACE("Realloc is much bigger; growing?\n");
+      // We need to make this chunk bigger, or give up and 
+      // alloc and free
+      if ((size_t*)header == deepest) {
+	// Best case! We can just grow the heap; we're on top.
+	header->num_chunks = new_size_chunks;
+	// The arena header is allowed to grow the heap
+	mem_sbrk((new_size_chunks-old_size_chunks) * FINAL_CHUNK_SIZE);
+	// In the end, nothing moves
+	return ptr;
+      } else {
+	PRINT_TRACE("Not on top, cannot grow.\n");
+	// We're not on top; we can't necessarily grow;
+	// Guess we're stuck; do this the hard way.
+	// TODO: OPT: This can check the linked list for adjacency
+	// to determine that we may be able to consume adjacent
+	// freed space, even if we're not on top.
+	return NULL;
+      }
+    }
+
+  } else {
+    // Delegate to a chunk
+    arena_chunk_hdr* owning_chunk = (arena_chunk_hdr*)((byte*)this + ARENA_HDR_SIZE + (header_offset/FINAL_CHUNK_SIZE)*FINAL_CHUNK_SIZE);
+    // We already calculated the old alloc size; we might as well pass it
+    return owning_chunk->realloc(ptr, size, old_size);
   }
 }
 
@@ -425,6 +509,69 @@ void arena_chunk_hdr::free(void* ptr) {
     ((small_run_hdr*)get_page_location(bin))->free(ptr);
   }
 }
+
+
+void* arena_chunk_hdr::realloc(void* ptr, size_t size, size_t old_size) {
+  size_t bin = get_page_index((byte*)ptr);
+  PRINT_TRACE("  arena_chunk_hdr has located a pointer into bin %zu (%d).\n", bin, page_map[bin]);
+  assert((page_map[bin] == SMALL_RUN_HEADER) || 
+	 (page_map[bin] == SMALL_RUN_FRAGMENT) ||
+	 (page_map[bin] == LARGE_RUN_HEADER));
+  if (page_map[bin] == LARGE_RUN_HEADER) {
+    // Possible early termination - we want to go from Large to small
+    if (size < MAX_SMALL_SIZE)
+      return NULL;
+    // OK, we're dealing with a Large run. Three cases, same as HUGE
+    size_t old_size_pages = ((large_run_hdr*)get_page_location(bin))->num_pages;
+    size_t new_size_pages = get_num_pages(size);
+    if (new_size_pages == old_size_pages) {
+      // Perfect! It stays in place
+      return ptr;
+    } else if (new_size_pages < old_size_pages) { 
+      // We can free some pages off the end
+      ((large_run_hdr*)get_page_location(bin))->num_pages = new_size_pages;
+      int ii;
+      for (ii = new_size_pages ; ii < old_size_pages ; ii++) {
+	page_map[ii] = FREE;
+      }
+      // Make sure to note these pages are actually available
+      num_pages_available += (old_size_pages - new_size_pages);
+      // Leave original poitner untouched
+      return ptr;
+    } else {
+      // We need to try to extend in place. It's possible there are free pages
+      // on top of us to allow us to do so.
+      // TODO: NEXT: Chunk may be growable
+
+      // It's possible we're asking to extend off the end and should abort
+      if (bin + new_size_pages > num_pages_allocated)
+	return NULL;
+
+      int ii;
+      for (ii = old_size_pages ; ii < new_size_pages ; ii++) {
+	if (page_map[ii] != FREE) {
+	  return NULL;
+	}
+      }
+
+      //...if we're down here, we can actually extend
+      ((large_run_hdr*)get_page_location(bin))->num_pages = new_size_pages;
+      for (ii = old_size_pages ; ii < new_size_pages ; ii++) {
+	page_map[ii] = LARGE_RUN_FRAGMENT;
+      }
+      return ptr;
+    }
+  } else {
+    // This is a small run fragment or header
+    // Locate the control structure and delegate
+    while (page_map[bin] == SMALL_RUN_FRAGMENT) {
+      bin--;
+    }
+    assert(page_map[bin] == SMALL_RUN_HEADER);
+    return ((small_run_hdr*)get_page_location(bin))->realloc(ptr, size, old_size);
+  }
+}
+
 
 // Given a pointer, determine its allocation size.
 // e.g. used by realloc to find size of pointer being freed
