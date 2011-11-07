@@ -6,7 +6,6 @@
 #include "alloc_types.h"
 #ifdef DEBUG
 #include "visualizer.h"
-#define DEBUG_VIS_REALLOC
 #endif
 namespace my
 {
@@ -121,7 +120,9 @@ namespace my
     /* Do a proper reallocation */
 
     size_t old_size = ((arena_hdr*)(mem_heap_lo()))->size_of_alloc(ptr);
+#ifdef DEBUG_VIS_REALLOC
     printf("Asked for a realloc on %zu bytes.\n", old_size);
+#endif
 
     /* We can ask subordinate routines to try to do clever reallocation. */
     /* If they fail, they will return NULL as a signal that we need to do a big,

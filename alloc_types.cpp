@@ -334,10 +334,11 @@ void* arena_hdr::realloc(void* ptr, size_t size, size_t old_size) {
       return ptr;
     
     } else { // new_size_chunks > old_size_chunks
-      PRINT_TRACE("Realloc is much bigger; growing?\n");
+      PRINT_TRACE(" Realloc is much bigger; growing?\n");
       // We need to make this chunk bigger, or give up and 
       // alloc and free
       if ((size_t*)header == deepest) {
+	PRINT_TRACE(" We are on top. Growing.\n");
 	// Best case! We can just grow the heap; we're on top.
 	header->num_chunks = new_size_chunks;
 	// The arena header is allowed to grow the heap
@@ -345,7 +346,7 @@ void* arena_hdr::realloc(void* ptr, size_t size, size_t old_size) {
 	// In the end, nothing moves
 	return ptr;
       } else {
-	PRINT_TRACE("Not on top, cannot grow.\n");
+	PRINT_TRACE(" Not on top, cannot grow.\n");
 	// We're not on top; we can't necessarily grow;
 	// Guess we're stuck; do this the hard way.
 	// TODO: OPT: This can check the linked list for adjacency
