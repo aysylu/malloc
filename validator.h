@@ -89,33 +89,38 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
   /* YOUR CODE HERE */
   // Get the range in ranges
   range_t *range = *ranges;
-  while (range != NULL) {
 
-    /* The range in ranges and the current range don't overlap
-     only in two cases:
-     lo and hi addresses of the current range are
-    1) smaller than lo and hi of the range
-    2) larger than lo and hi of the range
-    */
+  if (range == NULL) {
+    range_t p = {.lo = lo, .hi = hi, .next = NULL};
+    *ranges = &p;
+  } else {
 
-    if ((range->lo < lo && range->hi < hi) || (range->lo > lo && range->hi > hi)) {
-      // The regions do not overlap
-    } else {
-      // The regions overlap
-      int ret = sprintf(msg, "The payload overlaps with some other payload\n");
+    range_t *prev = NULL;
+    while (range != NULL) {
+
+      /* The range in ranges and the current range don't overlap
+       only in two cases:
+       lo and hi addresses of the current range are
+      1) smaller than lo and hi of the range
+      2) larger than lo and hi of the range
+      */
+
+      if ((range->lo < lo && range->hi < hi) || (range->lo > lo && range->hi > hi)) {
+        // The regions do not overlap
+        prev = range;
+        range = range->next;
+      } else {
+        // The regions overlap
+        int ret = sprintf(msg, "The payload overlaps with some other payload\n");
+      }
     }
-    range = range->next;
-  }
 
-  /* Everything looks OK, so remember the extent of this block by creating a
-   * range struct and adding it the range list.
-   */
-  range_t p;
-  p = {.lo = lo, .hi = hi, .next = NULL};
-  //p->lo = lo;
-  //p->hi = hi;
-  range->next = &p;
-  //p->next = NULL;
+    /* Everything looks OK, so remember the extent of this block by creating a
+     * range struct and adding it the range list.
+     */
+    range_t p = {.lo = lo, .hi = hi, .next = NULL};
+    prev->next = &p;
+  }
 
   return 1;
 }
