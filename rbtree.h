@@ -56,7 +56,4 @@ typedef rbt(node_t) tree_t;
 // Do macros
 rb_gen(static, tree_, tree_t, node_t, link, nodeCmp);
 		    
-		    // Extract head node
-#define tree_head(x) ((x)->rbt_root)
-
 #endif /* RBTREE_HEADER_GUARD */
