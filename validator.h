@@ -78,7 +78,7 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
 
   /* The payload must lie within the extent of the heap */
   /* YOUR CODE HERE */
-  if (*lo <= mem_heap_lo() || *hi >= mem_heap_hi()) {
+  if ((char *) *lo <= mem_heap_lo() || (char *) *hi >= mem_heap_hi()) {
     int ret = sprintf(msg, "Payload must lie within the extent of the heap; the payload addresses are %p and %p, and the heapsize is %lu\n", lo, hi, mem_heapsize());
     printf("%s", msg);
     return 0;
@@ -112,6 +112,7 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
   p->lo = lo;
   p->hi = hi;
   range->next = p;
+  p->next = NULL;
 
   return 1;
 }
@@ -228,8 +229,8 @@ int eval_mm_valid(Type *impl, trace_t *trace, int tracenum)
         /* YOUR CODE HERE */
         //TODO: think if any particular sequence is better to use
         // or we should avoid using this one
-        memset(p->lo, 0xA5, p->hi - p->lo + 1);
-        
+        assert(p != NULL);
+        memset((char *) p, 0xA5, *p + size - 1);
 
         /* Remember region */
         trace->blocks[index] = p;
@@ -260,7 +261,7 @@ int eval_mm_valid(Type *impl, trace_t *trace, int tracenum)
         if (size < oldsize)
           oldsize = size;
         /* YOUR CODE HERE */
-        if (memcmp(newp->lo, oldp->lo, oldsize) != 0) {
+        if (memcmp(newp, oldp, oldsize) != 0) {
           malloc_error(tracenum, i, "newly allocated memory has different content than the one before reallocation.");
           return 0;
         }
