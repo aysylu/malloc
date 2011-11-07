@@ -393,12 +393,13 @@ small_run_hdr* arena_chunk_hdr::carve_small_run(arena_bin* owner) {
 	  num_pages_available -= consec_pages;
 	  // This returns the *run* for use.
 	  return new_page;
-	} else {
-	  consec = 0;
 	}
+      } else {
+	consec = 0;
       }
     }
   }
+
   // Well, that didn't help. How about growing? Does that help?
   if (num_pages_available + (FINAL_CHUNK_PAGES - num_pages_allocated) > consec_pages) {
     PRINT_TRACE("   Growing chunk for small run.\n");
