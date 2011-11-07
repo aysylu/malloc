@@ -109,6 +109,46 @@ arena_chunk_hdr* arena_hdr::add_normal_chunk() {
   return new_chunk;
 }
 
+// Delegated heap consistency checker. Check yourself, then delegate further
+  /*
+   * This checks that our arena is well-formed
+   * returns 0 iff your heap is consistent
+   * return -1 otherwise
+   */
+  int arena_hdr::check() {
+
+    // Check whether deepest is within heap bounds
+    if (deepest < mem_heap_lo() || deepest > mem_heap_hi()) {
+      printf("The deepest chunk or huge run we allocated is not within heap bounds\n");
+      return -1;
+    }
+
+    // Check whether free_list is within bounds
+    if (free_list < mem_heap_lo() || free_list > mem_heap_hi()) {
+      printf("The free_list pointer points to memory outside of heap bounds\n");
+      return -1;
+    }
+
+    // Check whether deepest element is aligned
+    if (!IS_ALIGNED(*deepest)) {
+      printf("The deepest chunk or huge run is not aligned\n");
+      return -1;
+    }
+
+    // Verify that all chunks in a free_list are actually free
+    /*
+     * We don't actually check for this, since a chunk is put into free_list
+     * iff and as soon as it has been deallocated
+     */
+
+    //TODO: walk the rbtree using tree_next to check chunks
+    
+    // Delegate the rest of the check to arena_bin
+    return arena_bin.check();
+  }
+
+
+
 // Delegated malloc. Malloc if it's your responsibility, or delegate further.
 void* arena_hdr::malloc(size_t size) {
   // Two cases we care about: HUGE allocations and Small allocations.
@@ -552,6 +592,32 @@ arena_bin::arena_bin(arena_hdr* _parent, size_t _object_size, size_t num_pages) 
 
 void arena_bin::finalize_trees() {
   tree_new(&available_runs);
+}
+
+// Delegated check
+int arena_bin::check() {
+  // Check that arena_hdr is aligned -- this should never fail
+  if (!IS_ALIGNED(*parent)) {
+    printf("Arena_hdr is not aligned\n");
+    return -1;
+  }
+
+  // Check that current_run is aligned -- this should never fail
+  if (!IS_ALIGNED(*current_run)) {
+    printf("Current run is not aligned\n");
+    return -1;
+  }
+
+  // Check that object_size is aligned -- this should never fail
+  if (!IS_ALIGNED(object_size)) {
+    printf("Object size is not aligned\n");
+    return -1;
+  }
+
+
+  //TODO: walk the rbtree using tree_next to check available_runs
+  
+  
 }
 
 // Delegated malloc. Sorry, you're it - you're going to have to figure it out.
