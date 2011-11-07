@@ -6,6 +6,7 @@
 #include "alloc_types.h"
 #ifdef DEBUG
 #include "visualizer.h"
+#define DEBUG_CHECK_AGGRESSIVE
 #endif
 namespace my
 {
@@ -69,6 +70,10 @@ namespace my
     assert(mem_heap_lo() <= new_mem);
     assert(mem_heap_hi() >= new_mem);
     assert((size_t)new_mem == ALIGN((size_t)new_mem)); 
+#ifdef DEBUG_CHECK_AGGRESSIVE
+    int heap_status = ((arena_hdr*)mem_heap_lo())->check();
+    assert(heap_status == 0);
+#endif
     return new_mem;
   }
 
