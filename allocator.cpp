@@ -118,9 +118,7 @@ namespace my
     /* Do a proper reallocation */
 
     size_t old_size = ((arena_hdr*)(mem_heap_lo()))->size_of_alloc(ptr);
-#ifdef DEBUG_VIS_REALLOC
-    printf("Asked for a realloc on %zu bytes.\n", old_size);
-#endif
+    PRINT_TRACE("Asked for a realloc on %zu bytes.\n", old_size);
 
     /* We can ask subordinate routines to try to do clever reallocation. */
     /* If they fail, they will return NULL as a signal that we need to do a big,
@@ -155,6 +153,7 @@ namespace my
 
     /* This is a standard library call that performs a simple memory copy. */
     std::memcpy(newptr, ptr, old_size);
+    PRINT_TRACE("...memcpy done.\n");
 
     /* Release the old block. */
     PRINT_TRACE("...and now, freeing the old pointer.\n");

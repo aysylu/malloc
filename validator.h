@@ -276,8 +276,8 @@ int eval_mm_valid(Type *impl, trace_t *trace, int tracenum)
           oldsize = size;
 
           for (int i=0; i < oldsize; i++) {
-            printf("newp=%f\n", *(double *)(newp + i));
-            if (*(newp + i) != 0xA5) {
+	    // printf("newp=%f\n", *(double *)(newp + i));
+            if (*(newp + i) != (char)(0xA5)) {
               malloc_error(tracenum, i, "newly allocated memory has different content than the one before reallocation.");
               return 0;
             }
