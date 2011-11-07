@@ -3,16 +3,10 @@
 #include<cstring>
 #include "allocator_interface.h"
 #include "memlib.h"
-
-/* All blocks must have a specified minimum alignment. */
-#define ALIGNMENT 8
-
-/* Rounds up to the nearest multiple of ALIGNMENT. */
-#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1))
-
-/* The smallest aligned size that will hold a size_t value. */
-#define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
-
+#include "alloc_types.h"
+#ifdef DEBUG
+#include "visualizer.h"
+#endif
 namespace my
 {
   /*
@@ -43,12 +37,27 @@ namespace my
   }
 
   /*
-   * init - Initialize the malloc package.  Called once before any other
-   * calls are made.  Since this is a very simple implementation, we just
-   * return success.
+   * init - Initialize the malloc package. Called once before any other
+   * calls are made. This sets up the initial arena and creates a chunk.
    */
   int allocator::init()
   {
+    // Allocate memory for an arena header and its first chunk
+    // Conveniently, this is just under our slackness limit.
+    size_t initial_allocation = ARENA_HDR_SIZE + INITIAL_CHUNK_SIZE;
+    byte* new_mem = (byte*)mem_sbrk(initial_allocation);
+    if (new_mem == NULL) {
+      return -1; // Panic! Not out fault!
+    }
+    
+    // Write in the arena header; chunk header written by arena initializer
+    arena_hdr* this_arena = (arena_hdr*)mem_heap_lo();
+
+    *this_arena = arena_hdr();
+    // Now that it's on the heap, we can finish initialization
+    this_arena->finalize();
+    this_arena->insert_chunk((node_t*) ((byte*)(mem_heap_lo()) + ARENA_HDR_SIZE));
+    // If we had failed, exceptions would have appeared elsewhere.
     return 0;
   }
 
@@ -58,33 +67,12 @@ namespace my
    */
   void * allocator::malloc(size_t size)
   {
-    /* We allocate a little bit of extra memory so that we can store the
-       size of the block we've allocated.  Take a look at realloc to see
-       one example of a place where this can come in handy. */
-    int aligned_size = ALIGN(size + SIZE_T_SIZE);
-
-    /* Expands the heap by the given number of bytes and returns a pointer to
-       the newly-allocated area.  This is a slow call, so you will want to
-       make sure you don't wind up calling it on every malloc. */
-    void *p = mem_sbrk(aligned_size);
-
-    if (p == (void *)-1) {
-      /* Whoops, an error of some sort occurred.  We return NULL to let
-         the client code know that we weren't able to allocate memory. */
-      return NULL;
-    } else {
-      /* We store the size of the block we've allocated in the first
-         SIZE_T_SIZE bytes. */
-      *(size_t*)p = size;
-
-      /* Then, we return a pointer to the rest of the block of memory,
-         which is at least size bytes long.  We have to cast to uint8_t
-         before we try any pointer arithmetic because voids have no size
-         and so the compiler doesn't know how far to move the pointer.
-         Since a uint8_t is always one byte, adding SIZE_T_SIZE after
-         casting advances the pointer by SIZE_T_SIZE bytes. */
-      return (void *)((char *)p + SIZE_T_SIZE);
-    }
+    // Send this size to the lone arena for allocation
+#ifdef DEBUG
+    // Use arena visualization
+    visualize_arena(((arena_hdr*)(mem_heap_lo())));
+#endif
+    return ((arena_hdr*)(mem_heap_lo()))->malloc(size);
   }
 
   /*
@@ -92,6 +80,19 @@ namespace my
    */
   void allocator::free(void *ptr)
   {
+    if (ptr == NULL)
+      return;
+    // Find arena control structure at the bottom of the heap and delegate.
+#ifdef DEBUG
+    printf("** Begin Free Visualization **\n");
+    visualize_arena(((arena_hdr*)(mem_heap_lo())));
+#endif
+    ((arena_hdr*)(mem_heap_lo()))->free(ptr);
+#ifdef DEBUG
+    visualize_arena(((arena_hdr*)(mem_heap_lo())));
+    printf("** End Free Visualization **\n");
+#endif
+
   }
 
   /*

@@ -82,8 +82,6 @@ struct huge_run_hdr;
 #define ALIGNMENT 8
 // Page size; smallest amount allocated to a run of a size class
 #define PAGE_SIZE (4 * 1024) // 4 kB
-// Anything larger than this size must be given at least one page
-#define MAX_SMALL_SIZE (3840)
 // Initial chunk size; heap space given to a new arena when
 // there is only one arena. Note: We have a slackness of 10 pages.
 // We therefore assign an initial size just under the slackness.
@@ -136,22 +134,6 @@ const uint16_t SMALL_CLASS_SIZES[NUM_SMALL_CLASSES] =
     768, 1024, 1280, 1536, 1792, 
    2048, 2304, 2560, 2816, 
    3072, 3328, 3584, 3840}; 
-
-// Get small size class of an allocation request
-// Large and HUGE have different handling that
-// comes in before this, so checking for those sizes here
-// is not handy.
-size_t get_small_size_class(size_t real_size) {
-  assert(real_size <= MAX_SMALL_SIZE);
-  // TODO: Replace with binary search, or something... good. 
-  int i;
-  // In ascending size order, look for smallest fit
-  for(i=0; i<=NUM_SMALL_CLASSES-1; i++) {
-    if (real_size <= SMALL_CLASS_CONTAINERS[i]) 
-      return SMALL_CLASS_CONTAINERS[i+1];
-  }
-  return MAX_SMALL_SIZE;
-}
 
 // Some of the bigger small-class sizes really want extra pages
 // for their runs. This reduces fragmentation from rounding up.
@@ -236,6 +218,7 @@ struct arena_hdr {
   void filled_chunk(node_t* chunk);
   // Grow a normal chunk to take up more space
   size_t grow(arena_chunk_hdr* chunk);
+  size_t grow_max(arena_chunk_hdr* chunk);
 };
 
 /****************
@@ -257,8 +240,6 @@ struct arena_chunk_hdr {
   node_t chunk_tree_node; // Allows this to be part of an rbtree of runs for small/large assignments
   arena_hdr* parent; // Ptr to Arena
   size_t num_pages_available;
-  tree_t dirty_page_runs; // For dirty *whole pages*
-  arena_bin bin_headers[NUM_SMALL_CLASSES]; // Store run metadata
   size_t num_pages_allocated; // INITIAL_CHUNK_SIZE <= this <= FINAL_CHUNK_SIZE
                               // ...but don't forget the first page is the header
   // TODO: This tree is currently unused
@@ -268,6 +249,9 @@ struct arena_chunk_hdr {
   // Constructor
   arena_chunk_hdr(arena_hdr* _parent);
   void finalize_trees();
+
+  // It can't malloc directly, but it does have free responsibilities
+  void free(void* ptr);
 
   // Converter routines between page index and page address
   inline byte* get_page_location(size_t page_no);
@@ -280,9 +264,6 @@ struct arena_chunk_hdr {
   small_run_hdr* carve_small_run(arena_bin* owner);
 };
 
-inline size_t* get_page_location(arena_chunk_hdr* this_hdr, size_t page_no) {
-  return this_hdr + (page_no * PAGE_SIZE);
-}
 
 /**************
  * Small Runs *
@@ -302,6 +283,8 @@ struct small_run_hdr {
   void finalize();
   // Delegated malloc
   void* malloc();
+  // Delegated free
+  void free(void* ptr);
 };
 
 /**************

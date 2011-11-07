@@ -10,6 +10,7 @@ LDFLAGS := -lpthread
 
 HEADERS := \
 	allocator_interface.h \
+        alloc_types.h \
 	config.h \
 	fsecs.h \
 	mdriver.h \
@@ -21,6 +22,7 @@ HEADERS := \
 # If you add a new file called "filename.c", you should
 # add "filename.o \" to this list.
 OBJS := \
+        alloc_types.o \
 	memlib.o
 
 MDRIVER_OBJS:= \
