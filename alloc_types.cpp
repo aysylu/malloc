@@ -129,8 +129,8 @@ arena_chunk_hdr* arena_hdr::add_normal_chunk() {
       return -1;
     }
 
-    // Check whether deepest element is aligned
-    if (!IS_ALIGNED(*deepest)) {
+    // Check whether deepest element address is aligned
+    if (!IS_ALIGNED(deepest)) {
       printf("The deepest chunk or huge run is not aligned\n");
       return -1;
     }
@@ -596,14 +596,14 @@ void arena_bin::finalize_trees() {
 
 // Delegated check
 int arena_bin::check() {
-  // Check that arena_hdr is aligned -- this should never fail
-  if (!IS_ALIGNED(*parent)) {
+  // Check that arena_hdr address is aligned -- this should never fail
+  if (!IS_ALIGNED(parent)) {
     printf("Arena_hdr is not aligned\n");
     return -1;
   }
 
-  // Check that current_run is aligned -- this should never fail
-  if (!IS_ALIGNED(*current_run)) {
+  // Check that current_run address is aligned -- this should never fail
+  if (!IS_ALIGNED(current_run)) {
     printf("Current run is not aligned\n");
     return -1;
   }
