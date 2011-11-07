@@ -18,12 +18,7 @@ namespace my
    */
   int allocator::check()
   {
-    // Make sure that the pointer to arena_hdr is not NULL
-    if ((arena_hdr *)(mem_heap_lo()) == NULL) {
-      printf("Failed to allocate arena_hdr on the heap\n");
-    }
-
-    // Now allocate the heap consistency check to the arena_hdr
+    // Delegate the heap consistency check to the arena_hdr
     return ((arena_hdr*)(mem_heap_lo()))->check();
   }
 
