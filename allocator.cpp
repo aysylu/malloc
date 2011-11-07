@@ -70,7 +70,7 @@ namespace my
     // Send this size to the lone arena for allocation
 #ifdef DEBUG
     // Use arena visualization
-    //visualize_arena(((arena_hdr*)(mem_heap_lo())));
+    visualize_arena(((arena_hdr*)(mem_heap_lo())));
 #endif
     return ((arena_hdr*)(mem_heap_lo()))->malloc(size);
   }
@@ -83,7 +83,16 @@ namespace my
     if (ptr == NULL)
       return;
     // Find arena control structure at the bottom of the heap and delegate.
+#ifdef DEBUG
+    printf("** Begin Free Visualization **\n");
+    visualize_arena(((arena_hdr*)(mem_heap_lo())));
+#endif
     ((arena_hdr*)(mem_heap_lo()))->free(ptr);
+#ifdef DEBUG
+    visualize_arena(((arena_hdr*)(mem_heap_lo())));
+    printf("** End Free Visualization **\n");
+#endif
+
   }
 
   /*

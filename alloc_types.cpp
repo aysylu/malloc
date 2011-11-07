@@ -329,6 +329,8 @@ void arena_chunk_hdr::free(void* ptr) {
       page_map[bin + ii] = FREE;
       // TODO: OPT: Treed page run management
     }
+    // Note that cells have been returned for rapid bookkeeping
+    num_pages_available += num_chunks;
   } else {
     // Delegate!
   }
@@ -342,8 +344,7 @@ void* arena_chunk_hdr::fit_large_run(size_t consec_pages) {
   PRINT_TRACE("  Trying to fit into run %p, which has %zu free pages.\n", this, num_pages_available);
 
   // If you have enough free pages, the attempt can be made
-  if (consec_pages > num_pages_available) {
-    
+  if (consec_pages < num_pages_available) {
     int consec = 0;
     int ii;
     for (ii = 1 ; ii < num_pages_allocated ; ii++) {
@@ -383,18 +384,21 @@ void* arena_chunk_hdr::fit_large_run(size_t consec_pages) {
     }
     num_pages_available = (num_pages_allocated - old_allocation);
 
-    // At this point, we know perfectly well the *first* N pages are open
+    // At this point, we know perfectly well the *first* N new pages are open
     // ...but maybe a few more, too.
     int ii, jj;
     size_t start_point;
     for (ii = old_allocation ; ii > 0 ; ii--) {
+      PRINT_TRACE("   Backwalking pade %d looking for end-of-free...\n", ii);
       if (page_map[ii] != FREE) {
+	PRINT_TRACE("   ...but it's safe to start at page %d.\n", ii+1);
 	start_point = ii+1;
+	break;
       }
     }
     page_map[start_point] = LARGE_RUN_HEADER;
     for (jj = 1 ; jj < consec_pages ; jj++) {
-      page_map[ii + jj] = LARGE_RUN_FRAGMENT;
+      page_map[start_point + jj] = LARGE_RUN_FRAGMENT;
     }
     byte* new_address = get_page_location(start_point);
     *(large_run_hdr*)new_address = large_run_hdr(consec_pages);
