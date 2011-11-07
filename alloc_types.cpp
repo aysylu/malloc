@@ -92,8 +92,6 @@ void arena_hdr::finalize() {
   tree_new(&normal_chunks);
 }
 
-}
-
 // Delegated heap consistency checker. Check yourself, then delegate further
 /*
  * This checks that our arena is well-formed
