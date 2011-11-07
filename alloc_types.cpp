@@ -505,7 +505,6 @@ void arena_chunk_hdr::free(void* ptr) {
     // Now we're looking at a small header
     small_run_hdr* this_run = ((small_run_hdr*)get_page_location(bin));
     this_run->free(ptr);
-    ((small_run_hdr*)get_page_location(bin))->free(ptr);
   }
 }
 
@@ -1003,13 +1002,13 @@ void* small_run_hdr::malloc() {
 void small_run_hdr::free(void* ptr) {
   // All right. We need to add this cell to our free list, and write
   // a free list pointer to its address.
-  assert((size_t*)free_list != (size_t*)this);
+  assert((size_t*)free_list != (size_t*)ptr);
   *(size_t**)ptr = free_list; // Item at head of free list is written to this
   free_list = (size_t*)ptr; // free_list pointer bound to this
   free_cells++;
-  if (free_cells == parent->available_registrations) {
+  /*if (free_cells == parent->available_registrations) {
     
-  }
+    }*/
 
   if (free_cells == 1) {
     // This indicates we were full. We're not anymore, so mark us available.
