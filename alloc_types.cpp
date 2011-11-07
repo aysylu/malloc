@@ -130,6 +130,12 @@ void* arena_hdr::malloc(size_t size) {
     // Uh-oh. The free list couldn't help us. This needs a *new chunk*.
     // Arena is going to demand new space on the heap! Single thread, everything fine.
     PRINT_TRACE(" Creating a new chunk for this allocation.\n");
+    // A point of care: It may be the case that we have an ungrown arena chunk
+    // on top right now. We need to align the new chunk on top of that.
+    if ((byte*)mem_heap_hi() + 1 - (byte*)mem_heap_lo() - ARENA_HDR_SIZE % FINAL_CHUNK_SIZE) {
+      // Allocate heap up to the next chunk boundary. If we got here, this is a small run.
+      grow_max((arena_chunk_hdr*)deepest);
+    }
     void* new_heap = mem_sbrk(num_chunks * FINAL_CHUNK_SIZE);
     PRINT_TRACE(" Increased the heap by %lu\n", num_chunks * FINAL_CHUNK_SIZE);
     assert(new_heap != NULL);
@@ -189,7 +195,10 @@ void arena_hdr::free(void* ptr) {
   // First, get the distance from the end of the header (ptr - this)
   // Then, subtract the arena metadata offset (ARENA_HDR_SIZE)
   // If that falls on the first page of a multiple of FINAL_CHUNK_SIZE we are in business.
-  if (((byte*)ptr-((byte*)this+ARENA_HDR_SIZE)) % FINAL_CHUNK_SIZE <= PAGE_SIZE ) {
+  
+  size_t header_offset = ((byte*)(ptr) - (byte*)this - ARENA_HDR_SIZE);
+
+  if (header_offset % FINAL_CHUNK_SIZE <= PAGE_SIZE ) {
     PRINT_TRACE("Deallocating a HUGE chunk at %p.\n", ptr);
     // We know by computation this lies on a HUGE chunk boundary and
     // is a HUGE allocation
@@ -199,10 +208,12 @@ void arena_hdr::free(void* ptr) {
     // OK, now we can get freeing! Iteratively add freed chunks to the free list
     // We keep the free list sorted for contiguity checks. 
     // Assemble the free list links
+    PRINT_TRACE(" Writing %zu internal headers.\n", (header->num_chunks -1));
     int ii;
     for (ii = 0 ; ii < (header->num_chunks - 1) ; ii++) {
       // Write the address of the next free chunk at the top of this free chunk
       // ...by casting as a pointer to a pointer, and writing a pointer to it
+      PRINT_TRACE("  ...at %p, linking %p...\n", ((byte*)(header)) + FINAL_CHUNK_SIZE * ii, (size_t*)((byte*)(header) + FINAL_CHUNK_SIZE * (ii+1)));
       *(size_t**)(((byte*)(header)) + FINAL_CHUNK_SIZE * ii) = (size_t*)((byte*)(header) + FINAL_CHUNK_SIZE * (ii+1));
     }
 
@@ -211,21 +222,29 @@ void arena_hdr::free(void* ptr) {
     size_t** last_chunk_link_site = (size_t**)(((byte*)(header)) + FINAL_CHUNK_SIZE * ii);
     
     if (free_list == NULL) {
+      PRINT_TRACE(" Creating a chunk free list.\n");
       // Attach out segment to the free list
       free_list = (size_t*)header;
       *last_chunk_link_site = NULL;
     } else {
+      PRINT_TRACE(" Hey, we already have a free list!\n");
       size_t * curr = *(size_t**)free_list;
       size_t * prev = free_list;
-      while ((curr != NULL) || (curr < (size_t*)header)) {
+      PRINT_TRACE(" Recursing free list...\n");
+
+      while ((curr != NULL) && (curr < (size_t*)header)) {
 	prev = curr;
 	curr = (size_t *) *curr;
       }
+
       *(size_t **)(prev) = (size_t *)header;
       *(size_t **)last_chunk_link_site = (size_t *)(curr);
     }
   } else {
-    // TODO: NEXT: Delegate
+    // Which chunk is this in? Try using header_offset / FINAL_CHUNK_SIZE to index
+    arena_chunk_hdr* owning_chunk = (arena_chunk_hdr*)((byte*)this + ARENA_HDR_SIZE+ (header_offset/FINAL_CHUNK_SIZE)*FINAL_CHUNK_SIZE);
+    // Delegate!
+    owning_chunk->free(ptr);
   }
 }
 
@@ -258,11 +277,25 @@ size_t arena_hdr::grow(arena_chunk_hdr* chunk) {
   if ((size_t*)chunk == deepest) {
     PRINT_TRACE("Growing the deepest chunk.\n");
     assert(chunk->num_pages_allocated * 2 <= FINAL_CHUNK_PAGES);
+    // We have open VM ahead of us
+    mem_sbrk(chunk->num_pages_allocated * PAGE_SIZE);
     return chunk->num_pages_allocated * 2;
   } else {
     PRINT_TRACE("Fully inflating a chunk that's not the deepest.\n");
     // Something's already ahead of you! Grow, grow!
     return FINAL_CHUNK_PAGES;
+  }
+}
+
+// You know, for a fact, that you want a chunk grown to max size
+size_t arena_hdr::grow_max(arena_chunk_hdr* chunk) {
+  if ((size_t*)chunk == deepest) {
+    PRINT_TRACE("Maxing out a chunk!\n");
+    mem_sbrk((FINAL_CHUNK_PAGES - chunk->num_pages_allocated) * PAGE_SIZE);
+    return FINAL_CHUNK_PAGES;
+  } else {
+    // grow(chunk) will inflate this anyway
+    return grow(chunk);
   }
 }
 
@@ -282,6 +315,23 @@ arena_chunk_hdr::arena_chunk_hdr(arena_hdr* _parent) {
 
 void arena_chunk_hdr::finalize_trees() {
   tree_new(&clean_page_runs);
+}
+
+// An arena has told us this memory belongs to us. Free it.
+void arena_chunk_hdr::free(void* ptr) {
+  size_t bin = get_page_index((byte*)ptr);
+  PRINT_TRACE("  arena_chunk_hdr has located a pointer into bin %zu (%d).\n", bin, page_map[bin]);
+  assert((page_map[bin] == SMALL_RUN_HEADER) || (page_map[bin] == LARGE_RUN_HEADER));
+  if (page_map[bin] == LARGE_RUN_HEADER) {
+    size_t num_chunks = ((large_run_hdr*)get_page_location(bin))->num_pages;
+    int ii;
+    for(ii = 0 ; ii < num_chunks ; ii++) {
+      page_map[bin + ii] = FREE;
+      // TODO: OPT: Treed page run management
+    }
+  } else {
+    // Delegate!
+  }
 }
 
 // TODO: OPT: Replace all this with tree management in clean_page_runs
@@ -435,11 +485,11 @@ small_run_hdr* arena_chunk_hdr::carve_small_run(arena_bin* owner) {
 // Conversion routines 
 
 inline byte* arena_chunk_hdr::get_page_location(size_t page_no) {
-  return ((byte*) this + (page_no * PAGE_SIZE));
+  return ((byte*)this + (page_no * PAGE_SIZE));
 }
 
 inline size_t arena_chunk_hdr::get_page_index(byte* page_addr) {
-  return (page_addr - (byte*) this) / PAGE_SIZE;
+  return (page_addr - (byte*)this) / PAGE_SIZE;
 }
 
 

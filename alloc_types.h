@@ -207,6 +207,7 @@ struct arena_hdr {
   void filled_chunk(node_t* chunk);
   // Grow a normal chunk to take up more space
   size_t grow(arena_chunk_hdr* chunk);
+  size_t grow_max(arena_chunk_hdr* chunk);
 };
 
 /****************
@@ -237,6 +238,9 @@ struct arena_chunk_hdr {
   // Constructor
   arena_chunk_hdr(arena_hdr* _parent);
   void finalize_trees();
+
+  // It can't malloc directly, but it does have free responsibilities
+  void free(void* ptr);
 
   // Converter routines between page index and page address
   inline byte* get_page_location(size_t page_no);
