@@ -330,6 +330,10 @@ void arena_chunk_hdr::free(void* ptr) {
       // TODO: OPT: Treed page run management
     }
     // Note that cells have been returned for rapid bookkeeping
+    if (num_pages_available == 0) {
+      // We're about to stop being full
+      tree_insert(&(parent->normal_chunks), (node_t*)this);
+    }
     num_pages_available += num_chunks;
   } else {
     // It's a small header - delegate!
@@ -657,6 +661,11 @@ void* small_run_hdr::malloc() {
 void small_run_hdr::free(void* ptr) {
   // All right. We need to add this cell to our free list, and write
   // a free list pointer to its address.
-  *(size_t**)ptr = free_list; // This bound to item at head of free list
+  *(size_t**)ptr = free_list; // Item at head of free list is written to this
   free_list = (size_t*)ptr; // free_list pointer bound to this
+  free_cells++;
+  if (free_cells == 1) {
+    // This indicates we were full. We're not anymore, so mark us available.
+    tree_insert(&(parent->available_runs), (node_t*)this);
+  }
 }
