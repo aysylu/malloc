@@ -477,7 +477,7 @@ void arena_chunk_hdr::finalize_trees() {
 // An arena has told us this memory belongs to us. Free it.
 void arena_chunk_hdr::free(void* ptr) {
   size_t bin = get_page_index((byte*)ptr);
-  PRINT_TRACE("  arena_chunk_hdr has located a pointer into bin %zu (%d).\n", bin, page_map[bin]);
+  PRINT_TRACE("  arena_chunk_hdr has located a pointer into page %zu (%d).\n", bin, page_map[bin]);
   assert((page_map[bin] == SMALL_RUN_HEADER) || 
 	 (page_map[bin] == SMALL_RUN_FRAGMENT) ||
 	 (page_map[bin] == LARGE_RUN_HEADER));
@@ -496,16 +496,15 @@ void arena_chunk_hdr::free(void* ptr) {
       tree_insert(&(parent->normal_chunks), (node_t*)this);
     }
     num_pages_available += num_pages;
-  } else if (page_map[bin] == SMALL_RUN_HEADER) {
-    // It's a small header - delegate!
-    ((small_run_hdr*)get_page_location(bin))->free(ptr);
   } else {
-    // Oops. They want something in the middle of a multi-page small run.
     // You'll need to find the appropriate control structure.
     while (page_map[bin] == SMALL_RUN_FRAGMENT) {
       bin--;
     }
     assert(page_map[bin] == SMALL_RUN_HEADER);
+    // Now we're looking at a small header
+    small_run_hdr* this_run = ((small_run_hdr*)get_page_location(bin));
+    this_run->free(ptr);
     ((small_run_hdr*)get_page_location(bin))->free(ptr);
   }
 }
@@ -513,22 +512,26 @@ void arena_chunk_hdr::free(void* ptr) {
 
 void* arena_chunk_hdr::realloc(void* ptr, size_t size, size_t old_size) {
   size_t bin = get_page_index((byte*)ptr);
-  PRINT_TRACE("  arena_chunk_hdr has located a pointer into bin %zu (%d).\n", bin, page_map[bin]);
+  PRINT_TRACE("  arena_chunk_hdr has located a pointer into page %zu (%d).\n", bin, page_map[bin]);
   assert((page_map[bin] == SMALL_RUN_HEADER) || 
 	 (page_map[bin] == SMALL_RUN_FRAGMENT) ||
 	 (page_map[bin] == LARGE_RUN_HEADER));
   if (page_map[bin] == LARGE_RUN_HEADER) {
+    PRINT_TRACE("  Looks like we're reallocating a large run.\n");
     // Possible early termination - we want to go from Large to small or HUGE
     if ((size < MAX_SMALL_SIZE) || (size > MAX_LARGE_SIZE))
       return NULL;
     // OK, we're dealing with a Large run. Three cases, same as HUGE
     size_t old_size_pages = ((large_run_hdr*)get_page_location(bin))->num_pages;
     size_t new_size_pages = get_num_pages(size);
+    PRINT_TRACE("  ...from %zu pages to %zu pages.\n", old_size_pages, new_size_pages);
     if (new_size_pages == old_size_pages) {
+      PRINT_TRACE("  ...so we're keeping it in place.\n");
       // Perfect! It stays in place
       return ptr;
     } else if (new_size_pages < old_size_pages) { 
       // We can free some pages off the end
+      PRINT_TRACE(" ...so we're freeing some off the end.\n");
       ((large_run_hdr*)get_page_location(bin))->num_pages = new_size_pages;
       int ii;
       for (ii = new_size_pages ; ii < old_size_pages ; ii++) {
@@ -539,17 +542,20 @@ void* arena_chunk_hdr::realloc(void* ptr, size_t size, size_t old_size) {
       // Leave original poitner untouched
       return ptr;
     } else {
+      PRINT_TRACE("  ...so we're trying to extend.\n");
       // We need to try to extend in place. It's possible there are free pages
       // on top of us to allow us to do so.
       // TODO: NEXT: Chunk may be growable
 
       // It's possible we're asking to extend off the end and should abort
-      if (bin + new_size_pages > num_pages_allocated)
+      if (bin + new_size_pages > num_pages_allocated) {
+	PRINT_TRACE("  ...but we can't.\n");
 	return NULL;
-
+      }
       int ii;
       for (ii = old_size_pages ; ii < new_size_pages ; ii++) {
-	if (page_map[ii] != FREE) {
+	if (page_map[bin + ii] != FREE) {
+	  PRINT_TRACE("  ..but we ran into something.\n");
 	  return NULL;
 	}
       }
@@ -557,7 +563,7 @@ void* arena_chunk_hdr::realloc(void* ptr, size_t size, size_t old_size) {
       //...if we're down here, we can actually extend
       ((large_run_hdr*)get_page_location(bin))->num_pages = new_size_pages;
       for (ii = old_size_pages ; ii < new_size_pages ; ii++) {
-	page_map[ii] = LARGE_RUN_FRAGMENT;
+	page_map[bin + ii] = LARGE_RUN_FRAGMENT;
       }
       return ptr;
     }
@@ -997,9 +1003,14 @@ void* small_run_hdr::malloc() {
 void small_run_hdr::free(void* ptr) {
   // All right. We need to add this cell to our free list, and write
   // a free list pointer to its address.
+  assert((size_t*)free_list != (size_t*)this);
   *(size_t**)ptr = free_list; // Item at head of free list is written to this
   free_list = (size_t*)ptr; // free_list pointer bound to this
   free_cells++;
+  if (free_cells == parent->available_registrations) {
+    
+  }
+
   if (free_cells == 1) {
     // This indicates we were full. We're not anymore, so mark us available.
     parent->run_available((node_t*)this);
@@ -1008,10 +1019,10 @@ void small_run_hdr::free(void* ptr) {
 
 void* small_run_hdr::realloc(void* ptr, size_t size, size_t old_size) {
   // We're only interested in doing reallocation work if the size shrinks a *lot*.
-  if ((size > old_size) || (old_size / size < 2))
+  if ((size > old_size) || (old_size / size > 2))
     return NULL;
   else {
-    // New size is smaller, shrinking by a factor of 2 or more
+    // New size is smaller, but only by a little
     return ptr;
   }
 }

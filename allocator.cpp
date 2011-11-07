@@ -6,8 +6,7 @@
 #include "alloc_types.h"
 #ifdef DEBUG
 #include "visualizer.h"
-#define DEBUG_VIS_MALLOC
-#define DEBUG_VIS_FREE
+#define DEBUG_VIS_REALLOC
 #endif
 namespace my
 {
@@ -84,11 +83,11 @@ namespace my
     // Find arena control structure at the bottom of the heap and delegate.
 #ifdef DEBUG_VIS_FREE
     printf("** Begin Free Visualization **\n");
-    //visualize_arena(((arena_hdr*)(mem_heap_lo())));
+    visualize_arena(((arena_hdr*)(mem_heap_lo())));
 #endif
     ((arena_hdr*)(mem_heap_lo()))->free(ptr);
 #ifdef DEBUG_VIS_FREE
-    //visualize_arena(((arena_hdr*)(mem_heap_lo())));
+    visualize_arena(((arena_hdr*)(mem_heap_lo())));
     printf("** End Free Visualization **\n");
 #endif
 
@@ -100,6 +99,11 @@ namespace my
   void * allocator::realloc(void *ptr, size_t size)
   {
     void *newptr;
+
+#ifdef DEBUG_VIS_REALLOC
+    printf("** Just about to realloc **\n");
+    visualize_arena(((arena_hdr*)(mem_heap_lo())));
+#endif
 
     /* Look for special case - reallocate a pointer to zero size -> free */
     if (size == 0) {
