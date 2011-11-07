@@ -24,7 +24,7 @@
 #ifdef DEBUG_PRINT_TRACE
 #define PRINT_TRACE(...) printf( __VA_ARGS__ )
 #else
-#define PRINT_TRACE(...) // Do nothing
+#define PRINT_TRACE(...) do {} while(0);// Do nothing
 #endif
 
 /**************
@@ -281,7 +281,9 @@ struct small_run_hdr {
  **************/
 
 struct large_run_hdr {
-  node_t page_tree_node; // For storage in rb tree of whole-page runs
+  // node_t page_tree_node; // For storage in rb tree of whole-page runs
+  // currently unused
+
   //size_t formal_size; // True size of this allocation.
   size_t num_pages; // How many consecutive pages are assigned to this run
   // Constructor

@@ -32,6 +32,7 @@ inline size_t small_address_to_cell(small_run_hdr* this_hdr, size_t* this_cell, 
 void visualize_arena(arena_hdr* this_arena) {
   // Visualizes only the first chunk, because I said so.
   // TODO: Visualize more chunks.
+  //visualize_chunk((arena_chunk_hdr*)(this_arena->deepest));
   visualize_chunk((arena_chunk_hdr*)((byte*)this_arena + ARENA_HDR_SIZE));
 }
 
@@ -41,6 +42,7 @@ void visualize_chunk(arena_chunk_hdr* this_chunk) {
   // by the size of chunks. 
   printf("This is %zu chunk(s) up from the bottom of the heap.\n",  
 	 (long)((byte*)this_chunk - (byte*)mem_heap_lo())/ FINAL_CHUNK_SIZE);
+  printf("It also has %zu free pages.\n", this_chunk->num_pages_available);
   printf("Page map:\n");
 
   // Iterate over the page map, doing work
@@ -72,7 +74,9 @@ void visualize_chunk(arena_chunk_hdr* this_chunk) {
     case SMALL_RUN_HEADER:
       visualize_small_run(this_chunk, ii);
       break;
-      
+    default:
+      printf("This value does not make sense: %d.\n", this_chunk->page_map[ii]);
+      break;
     }
   }
   printf("\n");
