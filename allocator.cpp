@@ -58,11 +58,18 @@ namespace my
   void * allocator::malloc(size_t size)
   {
     // Send this size to the lone arena for allocation
-#ifdef DEBUG
+#ifdef DEBUG_VIS_MALLOC
     // Use arena visualization
     visualize_arena(((arena_hdr*)(mem_heap_lo())));
 #endif
-    return ((arena_hdr*)(mem_heap_lo()))->malloc(size);
+    void* new_mem = ((arena_hdr*)(mem_heap_lo()))->malloc(size);
+    // For safety's sake, make sure we're given back something reasonable
+    // This replicated some of the functionality of the heap checker, but in
+    // this case, we'll still be able to backtrace.
+    assert(mem_heap_lo() <= new_mem);
+    assert(mem_heap_hi() >= new_mem);
+    assert((size_t)new_mem == ALIGN((size_t)new_mem)); 
+    return new_mem;
   }
 
   /*
@@ -73,13 +80,13 @@ namespace my
     if (ptr == NULL)
       return;
     // Find arena control structure at the bottom of the heap and delegate.
-#ifdef DEBUG
+#ifdef DEBUG_VIS_FREE
     printf("** Begin Free Visualization **\n");
-    //visualize_arena(((arena_hdr*)(mem_heap_lo())));
+    visualize_arena(((arena_hdr*)(mem_heap_lo())));
 #endif
     ((arena_hdr*)(mem_heap_lo()))->free(ptr);
-#ifdef DEBUG
-    //visualize_arena(((arena_hdr*)(mem_heap_lo())));
+#ifdef DEBUG_VIS_FREE
+    visualize_arena(((arena_hdr*)(mem_heap_lo())));
     printf("** End Free Visualization **\n");
 #endif
 
@@ -91,26 +98,61 @@ namespace my
   void * allocator::realloc(void *ptr, size_t size)
   {
     void *newptr;
-    size_t copy_size;
+
+#ifdef DEBUG_VIS_REALLOC
+    printf("** Just about to realloc **\n");
+    visualize_arena(((arena_hdr*)(mem_heap_lo())));
+#endif
+
+    /* Look for special case - reallocate a pointer to zero size -> free */
+    if (size == 0) {
+      free(ptr);
+      // Equivalent to a free, but free doesn't return anything.
+      // Return null to be safe.
+      return NULL;
+    }
+
+    /* Look for special case - reallocate a null pointer -> malloc */
+    if (ptr == NULL) {
+      return malloc(size); // return malloc(size)
+    }
+    
+    /* Do a proper reallocation */
+
+    size_t old_size = ((arena_hdr*)(mem_heap_lo()))->size_of_alloc(ptr);
+#ifdef DEBUG_VIS_REALLOC
+    printf("Asked for a realloc on %zu bytes.\n", old_size);
+#endif
+
+    /* We can ask subordinate routines to try to do clever reallocation. */
+    /* If they fail, they will return NULL as a signal that we need to do a big,
+       slow malloc-copy-free to solve the problem. */
+
+    void* reallocated_ptr = ((arena_hdr*)(mem_heap_lo()))->realloc(ptr, size, old_size);
+    if (reallocated_ptr != NULL) {
+      // This indicates something clever succeeded.
+      return reallocated_ptr;
+    }
+
+    /* All right, do a malloc-copy-free */
 
     /* Allocate a new chunk of memory, and fail if that allocation fails. */
     newptr = malloc(size);
-    if (NULL == newptr)
+    if (newptr == NULL)
       return NULL;
 
     /* Get the size of the old block of memory.  Take a peek at malloc(),
        where we stashed this in the SIZE_T_SIZE bytes directly before the
        address we returned.  Now we can back up by that many bytes and read
        the size. */
-    copy_size = *(size_t*)((uint8_t*)ptr - SIZE_T_SIZE);
 
     /* If the new block is smaller than the old one, we have to stop copying
        early so that we don't write off the end of the new block of memory. */
-    if (size < copy_size)
-      copy_size = size;
+    if (size < old_size)
+      old_size = size;
 
     /* This is a standard library call that performs a simple memory copy. */
-    std::memcpy(newptr, ptr, copy_size);
+    std::memcpy(newptr, ptr, old_size);
 
     /* Release the old block. */
     free(ptr);

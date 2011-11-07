@@ -95,6 +95,7 @@ struct huge_run_hdr;
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
 // Anything larger than this size must be given at least one page
+// This must be updated if tables are updated!
 #define MAX_SMALL_SIZE (3840)
 // Anything larger than this must be given at least one chunk
 #define MAX_LARGE_SIZE (FINAL_CHUNK_SIZE - PAGE_SIZE) // Note - one page always allocated to header
@@ -205,9 +206,13 @@ struct arena_hdr {
 
   // Delegated heap consistency checker
   int check();
-  // Delegated malloc and free
+  // Delegated memory management
   void* malloc(size_t size);
   void free(void* ptr);
+  void* realloc(void* ptr, size_t size, size_t old_size);
+  // Determine size of an allocation
+  size_t size_of_alloc(void* ptr);
+
   // Find a chunk with space
   arena_chunk_hdr* retrieve_normal_chunk();
   // Make a new chunk for small/large allocations
@@ -250,18 +255,22 @@ struct arena_chunk_hdr {
   arena_chunk_hdr(arena_hdr* _parent);
   void finalize_trees();
 
-  // It can't malloc directly, but it does have free responsibilities
+  // It can't malloc directly, but it does have free and realloc responsibilities
   void free(void* ptr);
+  void* realloc(void* ptr, size_t size, size_t old_size);
+  // Get size of allocation by pointer
+  size_t size_of_alloc(void* ptr);
 
-  // Converter routines between page index and page address
-  inline byte* get_page_location(size_t page_no);
-  inline size_t get_page_index(byte* page_addr);
   // Expand heap by one chunk size, allocating the chunk for small or large page runs
   arena_chunk_hdr* add_normal_chunk();
   // Find a run of N consecutive pages to fit a Large allocation.
   void* fit_large_run(size_t consec_pages);
   // Find an unassigned page, write a small run header, and give it back
   small_run_hdr* carve_small_run(arena_bin* owner);
+
+  // Converter routines between page index and page address
+  inline byte* get_page_location(size_t page_no);
+  inline size_t get_page_index(byte* page_addr);
 };
 
 
@@ -284,10 +293,10 @@ struct small_run_hdr {
 
   // Delegated check
   int check();
-  // Delegated malloc
+  // Delegated malloc, free, realloc
   void* malloc();
-  // Delegated free
   void free(void* ptr);
+  void* realloc(void* ptr, size_t size, size_t old_size);
 };
 
 /**************
