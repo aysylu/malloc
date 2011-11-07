@@ -4,7 +4,9 @@
 #include "allocator_interface.h"
 #include "memlib.h"
 #include "alloc_types.h"
+#ifdef DEBUG
 #include "visualizer.h"
+#endif
 namespace my
 {
   /*
