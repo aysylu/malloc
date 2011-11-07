@@ -67,6 +67,13 @@ struct huge_run_hdr;
  * Memory and Alignment *
  ************************/
 
+/* Returns true if p is ALIGNMENT-byte aligned */
+#if (__WORDSIZE == 64 )
+#define IS_ALIGNED(p)  ((((uint64_t)(p)) % ALIGNMENT) == 0)
+#else
+#define IS_ALIGNED(p)  ((((uint32_t)(p)) % ALIGNMENT) == 0)
+#endif
+
 // Borrowed from the original allocator.cpp
 // Should not be needed that often, except perhaps sparingly
 // once locks are introduced. Other sizes are already aligned.
@@ -161,6 +168,8 @@ struct arena_bin {
   // Finalizer - once this is heaped
   void finalize_trees();
 
+  // Delegation of check
+  int check();
   // Delegation of malloc
   void* malloc();
   // Signal that a run is new or recently unfilled and should be added
@@ -194,6 +203,8 @@ struct arena_hdr {
   // themselves require heap. This includes bin construction and trees
   void finalize();
 
+  // Delegated heap consistency checker
+  int check();
   // Delegated malloc and free
   void* malloc(size_t size);
   void free(void* ptr);
@@ -276,6 +287,9 @@ struct small_run_hdr {
   small_run_hdr(arena_bin* _parent);
   // Finalizer
   void finalize();
+
+  // Delegated check
+  int check();
   // Delegated malloc
   void* malloc();
   // Delegated free

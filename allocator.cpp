@@ -12,30 +12,20 @@
 namespace my
 {
   /*
-   * check - This checks our invariant that the size_t header before every
-   * block points to either the beginning of the next block, or the end of the
-   * heap.
+   * This checks that after the allocator has been initialized,
+   * it returns a valid pointer to arena_hdr
+   * Returns 0 iff none of the invariants are violated;
+   * returns -1 otherwise.
    */
   int allocator::check()
   {
-    char *p;
-    char *lo = (char*)mem_heap_lo();
-    char *hi = (char*)mem_heap_hi() + 1;
-    size_t size = 0;
-
-    p = lo;
-    while (lo <= p && p < hi) {
-      size = ALIGN(*(size_t*)p + SIZE_T_SIZE);
-      p += size;
+    // Make sure that the pointer to arena_hdr is not NULL
+    if ((arena_hdr *)(mem_heap_lo()) == NULL) {
+      printf("Failed to allocate arena_hdr on the heap\n");
     }
 
-    if (p != hi) {
-      printf("Bad headers did not end at heap_hi!\n");
-      printf("heap_lo: %p, heap_hi: %p, size: %lu, p: %p\n", lo, hi, size, p);
-      return -1;
-    }
-
-    return 0;
+    // Now allocate the heap consistency check to the arena_hdr
+    return ((arena_hdr*)(mem_heap_lo()))->check();
   }
 
   /*
