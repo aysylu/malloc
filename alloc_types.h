@@ -272,6 +272,8 @@ struct small_run_hdr {
   void finalize();
   // Delegated malloc
   void* malloc();
+  // Delegated free
+  void free(void* ptr);
 };
 
 /**************

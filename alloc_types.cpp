@@ -332,7 +332,8 @@ void arena_chunk_hdr::free(void* ptr) {
     // Note that cells have been returned for rapid bookkeeping
     num_pages_available += num_chunks;
   } else {
-    // Delegate!
+    // It's a small header - delegate!
+    ((small_run_hdr*)get_page_location(bin))->free(ptr);
   }
 }
 
@@ -651,4 +652,11 @@ void* small_run_hdr::malloc() {
   }
   PRINT_TRACE("    I got you an address: %p.\n", new_address);
   return (void*) new_address;
+}
+
+void small_run_hdr::free(void* ptr) {
+  // All right. We need to add this cell to our free list, and write
+  // a free list pointer to its address.
+  *(size_t**)ptr = free_list; // This bound to item at head of free list
+  free_list = (size_t*)ptr; // free_list pointer bound to this
 }
