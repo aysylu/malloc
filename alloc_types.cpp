@@ -125,7 +125,7 @@ arena_chunk_hdr* arena_hdr::add_normal_chunk() {
 
     // Check whether free_list is within bounds
     if (free_list < mem_heap_lo() || free_list > mem_heap_hi()) {
-      printf("The free_list pointer points to memory outside of heap bounds\n");
+      printf("The free_list pointer points to memory outside of heap bounds: free_list=%lu, mem_heap_lo = %lu, mem_heap_hi=%lu\n", free_list, mem_heap_lo(), mem_heap_hi());
       return -1;
     }
 
