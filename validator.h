@@ -60,7 +60,6 @@ template <class Type>
 static int add_range(Type *impl, range_t **ranges, char *lo, 
 			int size, int tracenum, int opnum)
 {
-  return 1;
   char *hi = lo + size - 1;
   range_t *p = NULL;
 
@@ -69,23 +68,17 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
 
   assert(size > 0);
 
-  
   /* Payload addresses must be ALIGNMENT-byte aligned */
   /* YOUR CODE HERE */
-  /*
   if (!IS_ALIGNED(lo) || !IS_ALIGNED(hi)) {
     int ret = sprintf(msg, "Payload addresses %p and %p are not aligned\n", lo, hi);
     printf("%s", msg);
     return 0;
-  }*/
+  }
 
   /* The payload must lie within the extent of the heap */
   /* YOUR CODE HERE */
-  if ((char *) lo < mem_heap_lo() || (char *) hi > mem_heap_hi()) {
-    if ((char*) lo < mem_heap_lo())
-      printf("For the record, %p failed.\n", lo);
-    else
-      printf("For the record, %p failed.\n", hi);
+  if ((char *) *lo <= mem_heap_lo() || (char *) *hi >= mem_heap_hi()) {
     int ret = sprintf(msg, "Payload must lie within the extent of the heap; the payload addresses are %p and %p, and the heapsize is %lu\n", lo, hi, mem_heapsize());
     printf("%s", msg);
     return 0;
@@ -95,7 +88,7 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
   /* YOUR CODE HERE */
   // Get the range in ranges
   range_t *range = *ranges;
-  while (0) {
+  while (ranges != NULL) {
 
     /* The range in ranges and the current range don't overlap
      only in two cases:
@@ -103,7 +96,7 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
     1) smaller than lo and hi of the range
     2) larger than lo and hi of the range
     */
-    /*
+
     if ((range->lo < lo && range->hi < hi) || (range->lo > lo && range->hi > hi)) {
       // The regions do not overlap
     } else {
@@ -111,7 +104,6 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
       int ret = sprintf(msg, "The payload overlaps with some other payload\n");
     }
     range = range->next;
-    */
   }
 
   /* Everything looks OK, so remember the extent of this block by creating a
@@ -130,7 +122,6 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
  */
 static void remove_range(range_t **ranges, char *lo)
 {
-  return;
   range_t *p = NULL;
   range_t **prevpp = ranges;
 
@@ -175,7 +166,6 @@ static void remove_range(range_t **ranges, char *lo)
  */
 static void clear_ranges(range_t **ranges)
 {
-  return;
   range_t *p;
   range_t *pnext;
 
@@ -192,7 +182,6 @@ static void clear_ranges(range_t **ranges)
 template <class Type>
 int eval_mm_valid(Type *impl, trace_t *trace, int tracenum)
 {
-  return 1;
   int i = 0;
   int index = 0;
   int size = 0;
