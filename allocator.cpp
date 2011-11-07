@@ -71,7 +71,7 @@ namespace my
     assert(mem_heap_hi() >= new_mem);
     assert((size_t)new_mem == ALIGN((size_t)new_mem)); 
 #ifdef DEBUG_CHECK_AGGRESSIVE
-    int heap_status = ((arena_hdr*)mem_heap_lo())->check();
+    int heap_status = check();
     assert(heap_status == 0);
 #endif
     return new_mem;
