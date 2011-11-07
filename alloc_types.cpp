@@ -144,7 +144,13 @@ arena_chunk_hdr* arena_hdr::add_normal_chunk() {
     //TODO: walk the rbtree using tree_next to check chunks
     
     // Delegate the rest of the check to arena_bin
-    return arena_bin.check();
+    int result = 0;
+    for (int i = 0; i < NUM_SMALL_CLASSES; i++) {
+      result = bin_headers[i].check();
+      if (result != 0)
+        break;
+    }
+    return result;
   }
 
 
@@ -614,10 +620,15 @@ int arena_bin::check() {
     return -1;
   }
 
+  // Verify that run_length is aligned -- this should never fail
+  if (!IS_ALIGNED(run_length)) {
+    printf("Run length is not aligned\n");
+    return -1;
+  }
 
-  //TODO: walk the rbtree using tree_next to check available_runs
+  //TODO: walk the rbtree using tree_next to check all available_runs
   
-  
+  return current_run->check(); 
 }
 
 // Delegated malloc. Sorry, you're it - you're going to have to figure it out.
@@ -718,6 +729,32 @@ small_run_hdr::small_run_hdr(arena_bin* _parent) {
 void small_run_hdr::finalize() {
   // The first cell is offset from the header by the header size
   next = (size_t*)((byte*)this + SMALL_RUN_HDR_SIZE);//
+}
+
+// Verify that small_run_hdr is well-defined
+// Return 0 if well-formed, -1 otherwise
+int small_run_hdr::check() {
+
+  //Verify that arena_bin address is aligned
+  if (!IS_ALIGNED(parent)) {
+    printf("Arena_bin address is not aligned.\n");
+    return -1;
+  } 
+  
+  // Check that free_list address is aligned -- this should never fail
+  if (!IS_ALIGNED(free_list)) {
+    printf("Free_list address is not aligned\n");
+    return -1;
+  }
+
+  // Check that address to first *never-allocated* block is aligned
+  if (!IS_ALIGNED(next)) {
+    printf("The next never-allocated block is not aligned\n");
+    return -1;
+  }
+
+  //TODO: walk the rbtree to look at other small_run_hdr's?
+  return 0;
 }
 
 void* small_run_hdr::malloc() {

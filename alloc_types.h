@@ -281,6 +281,9 @@ struct small_run_hdr {
   small_run_hdr(arena_bin* _parent);
   // Finalizer
   void finalize();
+
+  // Delegated check
+  int check();
   // Delegated malloc
   void* malloc();
   // Delegated free
