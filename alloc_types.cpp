@@ -627,8 +627,9 @@ int arena_bin::check() {
   }
 
   //TODO: walk the rbtree using tree_next to check all available_runs
-   
-  return current_run->check();
+  if (current_run != NULL) { 
+    return current_run->check();
+  }
 }
 
 // Delegated malloc. Sorry, you're it - you're going to have to figure it out.
@@ -654,7 +655,7 @@ void* arena_bin::malloc() {
 	if (new_address != NULL) {
 	  // A new small run has been allocated for us. Move along.
 	  PRINT_TRACE("   ...succeeded, at %p.\n", new_address);
-	  current_run = (small_run_hdr*)new_address;
+	  current_run = (small_run_hdr*)((size_t *)new_address);
 	  break;
 	}
 	new_chunk = tree_next(&parent->normal_chunks, new_chunk);

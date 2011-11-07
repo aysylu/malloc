@@ -61,7 +61,7 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
 			int size, int tracenum, int opnum)
 {
   char *hi = lo + size - 1;
-  range_t *p = NULL;
+//  range_t *p = NULL;
 
   /* You can use this as a buffer for writing messages with sprintf. */
   char msg[MAXLINE];
@@ -70,7 +70,8 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
 
   /* Payload addresses must be ALIGNMENT-byte aligned */
   /* YOUR CODE HERE */
-  if (!IS_ALIGNED(lo) || !IS_ALIGNED(hi)) {
+  //TODO: we don't check whether hi address is aligned or not because we have no way of knowing what is the high address that has been passed to us
+  if (!IS_ALIGNED(lo)) {
     int ret = sprintf(msg, "Payload addresses %p and %p are not aligned\n", lo, hi);
     printf("%s", msg);
     return 0;
@@ -78,7 +79,7 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
 
   /* The payload must lie within the extent of the heap */
   /* YOUR CODE HERE */
-  if ((char *) *lo <= mem_heap_lo() || (char *) *hi >= mem_heap_hi()) {
+  if (lo <= mem_heap_lo() || hi >= mem_heap_hi()) {
     int ret = sprintf(msg, "Payload must lie within the extent of the heap; the payload addresses are %p and %p, and the heapsize is %lu\n", lo, hi, mem_heapsize());
     printf("%s", msg);
     return 0;
@@ -88,7 +89,7 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
   /* YOUR CODE HERE */
   // Get the range in ranges
   range_t *range = *ranges;
-  while (ranges != NULL) {
+  while (range != NULL) {
 
     /* The range in ranges and the current range don't overlap
      only in two cases:
@@ -109,10 +110,12 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
   /* Everything looks OK, so remember the extent of this block by creating a
    * range struct and adding it the range list.
    */
-  p->lo = lo;
-  p->hi = hi;
-  range->next = p;
-  p->next = NULL;
+  range_t p;
+  p = {.lo = lo, .hi = hi, .next = NULL};
+  //p->lo = lo;
+  //p->hi = hi;
+  range->next = &p;
+  //p->next = NULL;
 
   return 1;
 }
