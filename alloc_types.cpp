@@ -6,6 +6,10 @@
 #include "assert.h"
 #include "memlib.h" // Useful debugger
 
+// ** NB - foo::check() internal validation routines are
+// all defined at the bottom of the file, since they're verbose and
+// don't belong with the memory management per se
+
 /*********************
  * Utility Functions *
  *********************/
@@ -100,50 +104,6 @@ void arena_hdr::finalize() {
   // Take note that this, our first chunk, is the deepest chunk assigned.
   deepest = (size_t*)new_address;
   tree_new(&normal_chunks);
-}
-
-// Delegated heap consistency checker. Check yourself, then delegate further
-/*
- * This checks that our arena is well-formed
- * returns 0 iff your heap is consistent
- * return -1 otherwise
- */
-int arena_hdr::check() {
-  
-  // Check whether deepest is within heap bounds
-  if (deepest < mem_heap_lo() || deepest > mem_heap_hi()) {
-    printf("The deepest chunk or huge run we allocated is not within heap bounds\n");
-    return -1;
-  }
-  
-  // Check whether free_list is within bounds
-  if ((free_list != NULL) && (free_list < mem_heap_lo() || free_list > mem_heap_hi())) {
-    printf("The free_list pointer points to memory outside of heap bounds: free_list=%p, mem_heap_lo = %p, mem_heap_hi=%p\n", free_list, mem_heap_lo(), mem_heap_hi());
-    return -1;
-  }
-  
-  // Check whether deepest element address is aligned
-  if (!IS_ALIGNED(deepest)) {
-    printf("The deepest chunk or huge run is not aligned\n");
-    return -1;
-  }
-  
-  // Verify that all chunks in a free_list are actually free
-  /*
-   * We don't actually check for this, since a chunk is put into free_list
-   * iff and as soon as it has been deallocated
-   */
-  
-  //TODO: walk the rbtree using tree_next to check chunks
-  
-  // Delegate the rest of the check to arena_bin
-  int result = 0;
-  for (int i = 0; i < NUM_SMALL_CLASSES; i++) {
-    result = bin_headers[i].check();
-    if (result != 0)
-      break;
-  }
-  return result;
 }
 
 // Delegated malloc. Malloc if it's your responsibility, or delegate further.
@@ -809,37 +769,6 @@ void arena_bin::finalize_trees() {
   tree_new(&available_runs);
 }
 
-// Delegated check
-int arena_bin::check() {
-  // Check that arena_hdr address is aligned -- this should never fail
-  if (!IS_ALIGNED(parent)) {
-    printf("Arena_hdr is not aligned\n");
-    return -1;
-  }
-
-  // Check that current_run address is aligned -- this should never fail
-  if (!IS_ALIGNED(current_run)) {
-    printf("Current run is not aligned\n");
-    return -1;
-  }
-
-  // Check that object_size is aligned -- this should never fail
-  if (!IS_ALIGNED(object_size)) {
-    printf("Object size is not aligned\n");
-    return -1;
-  }
-
-  // Verify that run_length is aligned -- this should never fail
-  if (!IS_ALIGNED(run_length)) {
-    printf("Run length is not aligned\n");
-    return -1;
-  }
-
-  //TODO: walk the rbtree using tree_next to check all available_runs
-   
-  return current_run->check();
-}
-
 // Delegated malloc. Sorry, you're it - you're going to have to figure it out.
 void* arena_bin::malloc() {
   PRINT_TRACE(" Entering malloc at the arena_bin level.\n");
@@ -940,32 +869,6 @@ void small_run_hdr::finalize() {
   next = (size_t*)((byte*)this + SMALL_RUN_HDR_SIZE);//
 }
 
-// Verify that small_run_hdr is well-defined
-// Return 0 if well-formed, -1 otherwise
-int small_run_hdr::check() {
-
-  //Verify that arena_bin address is aligned
-  if (!IS_ALIGNED(parent)) {
-    printf("Arena_bin address is not aligned.\n");
-    return -1;
-  } 
-  
-  // Check that free_list address is aligned (fcheck only when free_list != NULL)-- this should never fail
-  if ((free_list != NULL) && !IS_ALIGNED(free_list)) {
-    printf("Free_list address is not aligned\n");
-    return -1;
-  }
-
-  // Check that address to first *never-allocated* block is aligned
-  if (!IS_ALIGNED(next)) {
-    printf("The next never-allocated block is not aligned\n");
-    return -1;
-  }
-
-  //TODO: walk the rbtree to look at other small_run_hdr's?
-  return 0;
-}
-
 void* small_run_hdr::malloc() {
   PRINT_TRACE("   Entering malloc at the small_run_hdr level (%zu).\n", (parent->object_size));
   PRINT_TRACE("    Before we take one, this run has %zu uses left.\n", free_cells);
@@ -1025,4 +928,183 @@ void* small_run_hdr::realloc(void* ptr, size_t size, size_t old_size) {
     // New size is smaller, but only by a little
     return ptr;
   }
+}
+
+
+/**************************************
+ * Intenal Consistency Check Routines *
+ **************************************/
+
+// Delegated heap consistency checker. Check yourself, then delegate further
+/*
+ * This checks that our arena is well-formed
+ * returns 0 iff your heap is consistent
+ * return -1 otherwise
+ */
+int arena_hdr::check() {
+  // Check whether deepest is within heap bounds
+  if (deepest < mem_heap_lo() || deepest > mem_heap_hi()) {
+    printf("The deepest chunk or huge run we allocated is not within heap bounds\n");
+    return -1;
+  }
+  
+  // Check whether free_list is within bounds
+  if ((free_list != NULL) && (free_list < mem_heap_lo() || free_list > mem_heap_hi())) {
+    printf("The free_list pointer points to memory outside of heap bounds: free_list=%p, mem_heap_lo = %p, mem_heap_hi=%p\n", free_list, mem_heap_lo(), mem_heap_hi());
+    return -1;
+  }
+  
+  // Check whether deepest element address is aligned
+  if (!IS_ALIGNED(deepest)) {
+    printf("The deepest chunk or huge run is not aligned\n");
+    return -1;
+  }
+  
+  // Verify that all chunks in a free_list are actually free
+  /*
+   * We don't actually check for this, since a chunk is put into free_list
+   * iff and as soon as it has been deallocated
+   */
+  
+  // Walk the rbtree using tree_next to check chunks
+  node_t* a_chunk = tree_first(&normal_chunks);
+  while (a_chunk != NULL) {
+    // Delegate to internal checker
+    if (((arena_chunk_hdr*)a_chunk)->check() != 0)
+      return -1;
+    a_chunk = tree_next(&normal_chunks, a_chunk);
+  }
+
+  // Delegate the rest of the check to arena_bin
+  for (int i = 0; i < NUM_SMALL_CLASSES; i++) {
+    // Delegate to internal checker
+    if (bin_headers[i].check() != 0)
+      return -1;
+  }
+
+  // No complaints!
+  return 0;
+}
+
+int arena_chunk_hdr::check() {
+  // Must be aligned
+  if (!IS_ALIGNED(this))
+    return -1;
+
+  if (page_map[0] != HEADER) { 
+    // The first page in an arena must be a header.
+    return -1;
+  }
+
+  int ii=1, jj;
+  small_run_hdr* wkg_small_run;
+  large_run_hdr* wkg_large_run;
+  while (ii < num_pages_allocated) {
+    switch (page_map[ii]) {
+
+    case FREE: // No problem, examine next block
+      ii++;
+      break;
+
+    case SMALL_RUN_HEADER:
+      // Need to scan to make sure we have our small fragments
+      wkg_small_run = (small_run_hdr*)get_page_location(ii);
+      // If the small run's longer than a page,
+      // we expect to see a certain number of fragment pages
+      for (jj = 1 ; jj < (wkg_small_run->parent->run_length / PAGE_SIZE) ; jj++) {
+	if (page_map[ii+jj] != SMALL_RUN_FRAGMENT)
+	  return -1;
+      }
+      ii += jj;
+      break;
+
+    case LARGE_RUN_HEADER:
+      wkg_large_run = (large_run_hdr*)get_page_location(ii);
+      for (jj = 1; jj < (wkg_large_run->num_pages) ; jj++) {
+	if (page_map[ii+jj] != LARGE_RUN_FRAGMENT)
+	  return -1;
+      }
+      ii += jj;
+      break;
+
+      // What *shouldn't* happen: we shouldn't land on fragments
+    case HEADER:
+    case LARGE_RUN_FRAGMENT:
+    case SMALL_RUN_FRAGMENT:
+      return -1;
+    }
+  }
+
+  for ( ; ii < FINAL_CHUNK_PAGES ; ii++) {
+    // All unallocated chunks must be free
+    if (page_map[ii] != FREE)
+      return -1;
+  }
+
+  // Non-full runs in the page map will be caught
+  // by another part of the checker, but if you have
+  // a small run with every cell filled, you should
+  // ask it to check.
+  for( ii = 1 ; ii < num_pages_allocated ; ii++) {
+    if (page_map[ii] == SMALL_RUN_HEADER) {
+      wkg_small_run = (small_run_hdr*)(get_page_location(ii));
+      if ((wkg_small_run->free_cells == 0) &&
+	  (wkg_small_run->check() != 0)) {
+	return -1;
+      }
+    }
+  }
+  
+  // Works for me
+  return 0;
+}
+
+int arena_bin::check() {
+  // Like everything else, this header data must be aligned
+  if (!IS_ALIGNED(this))
+    return -1;
+
+  // The current run pointer must be null, or a pointer to a small run header
+  // We can bounds-check that pointer
+  if (current_run != NULL) {
+    if ((current_run < mem_heap_lo()) ||
+	(current_run > mem_heap_hi())) {
+      return -1;
+    }
+  }
+
+  // Crawl run tree, delegating check to small runs
+  node_t* this_run = tree_first(&available_runs);
+  while (this_run != NULL) {
+    if (((small_run_hdr*)this_run)->check() != 0)
+      return -1;
+    this_run = tree_next(&available_runs, this_run);
+  }
+
+  // No complaints
+  return 0;
+}
+
+int small_run_hdr::check() {
+  // Control structure must be aligned
+  if (!IS_ALIGNED(this))
+    return -1;
+
+  // Next pointer must be in bounds - if we have free cells
+  // It may slightly overrun otherwise, but it also becomes unused
+  // in that case.
+  if (free_cells && ((byte*)next - (byte*)this > parent->run_length))
+    return -1;
+
+  // Follow free list with bounds checking - pointer must lie
+  // within this cell
+  size_t* follow_free = free_list;
+  while (follow_free != NULL) {
+    if ((byte*)follow_free - (byte*)this > parent->run_length)
+      return -1;
+    follow_free = (size_t*)(*follow_free);
+  }
+
+  // No further complaints
+  return 0;
 }
