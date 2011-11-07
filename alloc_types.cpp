@@ -131,7 +131,7 @@ void* arena_hdr::malloc(size_t size) {
     PRINT_TRACE(" Creating a new chunk for this allocation.\n");
     // A point of care: It may be the case that we have an ungrown arena chunk
     // on top right now. We need to align the new chunk on top of that.
-    if ((byte*)mem_heap_hi() + 1 - (byte*)mem_heap_lo() - ARENA_HDR_SIZE % FINAL_CHUNK_SIZE) {
+    if ((mem_heapsize() - ARENA_HDR_SIZE) % FINAL_CHUNK_SIZE) {
       // Allocate heap up to the next chunk boundary. If we got here, this is a small run.
       grow_max((arena_chunk_hdr*)deepest);
     }
