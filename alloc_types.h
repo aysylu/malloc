@@ -184,8 +184,8 @@ struct arena_hdr {
   // LOCK GOES HERE IN FUTURE
   tree_t normal_chunks; // rb tree of chunks that have large/small metadata
                         // and that still have available space
-  byte* deepest; // Points to the deepest chunk or huge run allocated
-  byte* free; // Points to a free list of chunks
+  size_t* deepest; // Points to the deepest chunk or huge run allocated
+  size_t* free_list; // Points to a free list of chunks
   arena_bin bin_headers[NUM_SMALL_CLASSES]; // Store run metadata
 
   // Constructor
@@ -194,8 +194,9 @@ struct arena_hdr {
   // themselves require heap. This includes bin construction and trees
   void finalize();
 
-  // Delegated malloc
+  // Delegated malloc and free
   void* malloc(size_t size);
+  void free(void* ptr);
   // Find a chunk with space
   arena_chunk_hdr* retrieve_normal_chunk();
   // Make a new chunk for small/large allocations
@@ -258,8 +259,8 @@ struct small_run_hdr {
   node_t run_tree_node; // Allows this to be part of a rbtree of runs
   // LOCK GOES HERE IN FUTURE
   arena_bin* parent; // Pointer to our parent bin
-  byte* free; // Pointer to start block of free list
-  byte* next; // Pointer to first *never-allocated* block
+  size_t* free_list; // Pointer to start block of free list
+  size_t* next; // Pointer to first *never-allocated* block
   size_t free_cells; // How many free cells remain
   // Constructor
   small_run_hdr(arena_bin* _parent);

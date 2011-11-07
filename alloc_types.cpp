@@ -62,7 +62,7 @@ size_t get_num_pages(size_t large_allocation) {
  *********/
 
 arena_hdr::arena_hdr() {
-  free = NULL; // No free list initially
+  free_list = NULL; // No free list initially
 
   // We really can't do anything else until we're on the heap.
   // It's hard to give children a pointer to us otherwise.
@@ -88,7 +88,7 @@ void arena_hdr::finalize() {
   assert((mem_heap_lo() <= new_address) && (new_address <= mem_heap_hi()));
   *new_address = foo;
   // Take note that this, our first chunk, is the deepest chunk assigned.
-  deepest = (byte*)new_address;
+  deepest = (size_t*)new_address;
   tree_new(&normal_chunks);
 }
 
@@ -102,7 +102,7 @@ void arena_hdr::insert_chunk(node_t* chunk) {
 arena_chunk_hdr* arena_hdr::add_normal_chunk() {
   arena_chunk_hdr* new_chunk = (arena_chunk_hdr*)mem_sbrk(INITIAL_CHUNK_SIZE);
   *new_chunk = arena_chunk_hdr(this);
-  deepest = (byte*)new_chunk; // Take note that this is now the deepst chunk
+  deepest = (size_t*)new_chunk; // Take note that this is now the deepst chunk
   insert_chunk((node_t*) new_chunk); // Also, it's new and has space in it
   return new_chunk;
 }
@@ -120,7 +120,7 @@ void* arena_hdr::malloc(size_t size) {
     PRINT_TRACE(" Using a HUGE allocation.\n");
     size_t num_chunks = get_num_chunks(size);
     PRINT_TRACE(" Number of chunks is %lu\n", num_chunks);
-    if (free != NULL) {
+    if (free_list != NULL) {
       // TODO: Try to pull something from the free list
       // TODO: We currently don't have a free list for chunks
       // Later we'll have a structure that coalesces chunks
@@ -136,7 +136,7 @@ void* arena_hdr::malloc(size_t size) {
     // Write a new huge_run_hdr into the new space.
     *(huge_run_hdr*)new_heap = huge_run_hdr(size, num_chunks);
     // Take note of the deepst object assigned
-    deepest = (byte*)new_heap;
+    deepest = (size_t*)new_heap;
     // OK, header in place - let's give them back the pointer, skipping the header
     void* new_address = ((byte*) new_heap + HUGE_RUN_HDR_SIZE);
     PRINT_TRACE(" ...succeeded, at %p.\n", new_address);
@@ -182,6 +182,53 @@ void* arena_hdr::malloc(size_t size) {
   }
 }
 
+// Delegated free
+void arena_hdr::free(void* ptr) {
+  // Determine if this is a HUGE allocation. We know if this is a HUGE allocation if it's
+  // on a chunk boundary.
+  // First, get the distance from the end of the header (ptr - this)
+  // Then, subtract the arena metadata offset (ARENA_HDR_SIZE)
+  // If that falls on the first page of a multiple of FINAL_CHUNK_SIZE we are in business.
+  if (((byte*)ptr-((byte*)this+ARENA_HDR_SIZE)) % FINAL_CHUNK_SIZE <= PAGE_SIZE ) {
+    PRINT_TRACE("Deallocating a HUGE chunk at %p.\n", ptr);
+    // We know by computation this lies on a HUGE chunk boundary and
+    // is a HUGE allocation
+    // Find HUGE allocation header
+    huge_run_hdr* header = (huge_run_hdr*)(((byte*)(ptr)) - HUGE_RUN_HDR_SIZE);
+    PRINT_TRACE(" Header data located at %p.\n", header);
+    // OK, now we can get freeing! Iteratively add freed chunks to the free list
+    // We keep the free list sorted for contiguity checks. 
+    // Assemble the free list links
+    int ii;
+    for (ii = 0 ; ii < (header->num_chunks - 1) ; ii++) {
+      // Write the address of the next free chunk at the top of this free chunk
+      // ...by casting as a pointer to a pointer, and writing a pointer to it
+      *(size_t**)(((byte*)(header)) + FINAL_CHUNK_SIZE * ii) = (size_t*)((byte*)(header) + FINAL_CHUNK_SIZE * (ii+1));
+    }
+
+    // Also, save the first link target and last link site to help us
+    // The first chunk link address is just the header
+    size_t** last_chunk_link_site = (size_t**)(((byte*)(header)) + FINAL_CHUNK_SIZE * ii);
+    
+    if (free_list == NULL) {
+      // Attach out segment to the free list
+      free_list = (size_t*)header;
+      *last_chunk_link_site = NULL;
+    } else {
+      size_t * curr = *(size_t**)free_list;
+      size_t * prev = free_list;
+      while ((curr != NULL) || (curr < (size_t*)header)) {
+	prev = curr;
+	curr = (size_t *) *curr;
+      }
+      *(size_t **)(prev) = (size_t *)header;
+      *(size_t **)last_chunk_link_site = (size_t *)(curr);
+    }
+  } else {
+    // TODO: NEXT: Delegate
+  }
+}
+
 // Find a chunk that has a free page for a small run
 arena_chunk_hdr* arena_hdr::retrieve_normal_chunk() {
   // We're getting corruption of normal_chunks; let's take extra care
@@ -208,7 +255,7 @@ void arena_hdr::filled_chunk(node_t* filled) {
 // Tell a chunk how many pages it is allowed to be, knowing that it has
 // requested more pages.
 size_t arena_hdr::grow(arena_chunk_hdr* chunk) {
-  if ((byte*)chunk == deepest) {
+  if ((size_t*)chunk == deepest) {
     PRINT_TRACE("Growing the deepest chunk.\n");
     assert(chunk->num_pages_allocated * 2 <= FINAL_CHUNK_PAGES);
     return chunk->num_pages_allocated * 2;
@@ -508,13 +555,13 @@ large_run_hdr::large_run_hdr(size_t _num_pages) {
 small_run_hdr::small_run_hdr(arena_bin* _parent) {
   // node_t needs no initialization; the node is made
   parent = _parent;
-  free = NULL; // There is no free list
+  free_list = NULL; // There is no free list
   free_cells = parent->available_registrations;
 }
 
 void small_run_hdr::finalize() {
   // The first cell is offset from the header by the header size
-  next = ((byte*)this + SMALL_RUN_HDR_SIZE);//
+  next = (size_t*)((byte*)this + SMALL_RUN_HDR_SIZE);//
 }
 
 void* small_run_hdr::malloc() {
@@ -532,20 +579,20 @@ void* small_run_hdr::malloc() {
     parent->filled_run((node_t*)this);
   }
 
-  if (free != NULL) {
+  if (free_list != NULL) {
     PRINT_TRACE("    We're going to take a cell off the free list.\n");
     // Grab the head of the free list
-    new_address = free;
+    new_address = (byte*)free_list;
     // Pop it off and chain the free pointer down
-    free = (byte*) *free;
+    free_list = (size_t*)*free_list;
     // Give the user the space
   } else {
     PRINT_TRACE("    No free list; we're using the 'next' pointer.\n");
     // OK, so we don't have a free list.
     // Get a new cell from the never-used pointer
-    new_address = next;
+    new_address = (byte*)next;
     // Bump up the never-used pointer for next time
-    next += parent->object_size;
+    next = (size_t*)((byte*)next + parent->object_size);
   }
   PRINT_TRACE("    I got you an address: %p.\n", new_address);
   return (void*) new_address;

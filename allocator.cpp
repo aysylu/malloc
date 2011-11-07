@@ -78,6 +78,10 @@ namespace my
    */
   void allocator::free(void *ptr)
   {
+    if (ptr == NULL)
+      return;
+    // Find arena control structure at the bottom of the heap and delegate.
+    ((arena_hdr*)(mem_heap_lo()))->free(ptr);
   }
 
   /*

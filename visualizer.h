@@ -23,7 +23,7 @@
 void visualize_large_run(arena_chunk_hdr* this_chunk, size_t this_page);
 void visualize_small_run(arena_chunk_hdr* this_chunk, size_t this_page);
 void visualize_chunk(arena_chunk_hdr* this_chunk);
-inline size_t small_address_to_cell(small_run_hdr* this_hdr, byte* this_cell, size_t object_size); 
+inline size_t small_address_to_cell(small_run_hdr* this_hdr, size_t* this_cell, size_t object_size); 
 
 /*************
  * Functions *
@@ -111,14 +111,14 @@ void visualize_small_run(arena_chunk_hdr* this_chunk, size_t this_page) {
   }
 
   // Then follow the free list, marking those cells UNFILLED
-  byte* follow_free = this_hdr->free;
+  size_t* follow_free = this_hdr->free_list;
   size_t follow_free_cell;
   while (follow_free != NULL) {
     follow_free_cell = small_address_to_cell(this_hdr, follow_free, object_size);
     cells[follow_free_cell] = UNFILLED;
     // Since we're following the free list, we know the contents of a cell is 
     // a pointer to the next free cell or to NULL, and can follow it down
-    follow_free = (byte*)(*follow_free);
+    follow_free = (size_t*)(*follow_free);
   }
 
   // Print the visualization, up to 50 cells per line, using a single
@@ -146,7 +146,7 @@ void visualize_small_run(arena_chunk_hdr* this_chunk, size_t this_page) {
 
 }
 
-inline size_t small_address_to_cell(small_run_hdr* this_hdr, byte* this_cell, size_t object_size) {
+inline size_t small_address_to_cell(small_run_hdr* this_hdr, size_t* this_cell, size_t object_size) {
   // Given an address in a header, determine what cell number that is in the cell map
   // Direct address subtraction is fun!
   size_t delta = (size_t)((byte*)this_cell - (byte*)this_hdr) - SMALL_RUN_HDR_SIZE;
