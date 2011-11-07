@@ -243,9 +243,9 @@ int eval_mm_valid(Type *impl, trace_t *trace, int tracenum)
         // prev range_t contains the most recently allocated range
         memset(p, 0xA5, size);
 
-        for (int i=0; i < oldsize; i++) {
-          assert((*(newp + i) == 0xA5));
-        }
+//        for (int ii=0; ii < oldsize; ii++) {
+//          assert((*(newp + i) == 0xA5));
+//        }
         /* Remember region */
         trace->blocks[index] = p;
         trace->block_sizes[index] = size;
