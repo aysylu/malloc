@@ -197,6 +197,9 @@ struct arena_hdr {
   // Delegated malloc and free
   void* malloc(size_t size);
   void free(void* ptr);
+  // Determine size of an allocation
+  size_t size_of_alloc(void* ptr);
+
   // Find a chunk with space
   arena_chunk_hdr* retrieve_normal_chunk();
   // Make a new chunk for small/large allocations
@@ -241,16 +244,19 @@ struct arena_chunk_hdr {
 
   // It can't malloc directly, but it does have free responsibilities
   void free(void* ptr);
+  // Get size of allocation by pointer
+  size_t size_of_alloc(void* ptr);
 
-  // Converter routines between page index and page address
-  inline byte* get_page_location(size_t page_no);
-  inline size_t get_page_index(byte* page_addr);
   // Expand heap by one chunk size, allocating the chunk for small or large page runs
   arena_chunk_hdr* add_normal_chunk();
   // Find a run of N consecutive pages to fit a Large allocation.
   void* fit_large_run(size_t consec_pages);
   // Find an unassigned page, write a small run header, and give it back
   small_run_hdr* carve_small_run(arena_bin* owner);
+
+  // Converter routines between page index and page address
+  inline byte* get_page_location(size_t page_no);
+  inline size_t get_page_index(byte* page_addr);
 };
 
 
