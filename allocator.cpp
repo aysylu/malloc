@@ -97,8 +97,6 @@ namespace my
    */
   void * allocator::realloc(void *ptr, size_t size)
   {
-    void *newptr;
-
 #ifdef DEBUG_VIS_REALLOC
     printf("** Just about to realloc **\n");
     visualize_arena(((arena_hdr*)(mem_heap_lo())));
@@ -131,15 +129,17 @@ namespace my
     void* reallocated_ptr = ((arena_hdr*)(mem_heap_lo()))->realloc(ptr, size, old_size);
     if (reallocated_ptr != NULL) {
       // This indicates something clever succeeded.
+      PRINT_TRACE("A clever in-place realloc was done.\n");
       return reallocated_ptr;
     }
 
     /* All right, do a malloc-copy-free */
 
     /* Allocate a new chunk of memory, and fail if that allocation fails. */
-    newptr = malloc(size);
-    if (newptr == NULL)
+    void* newptr = malloc(size);
+    if (newptr == NULL) {
       return NULL;
+    }
 
     /* Get the size of the old block of memory.  Take a peek at malloc(),
        where we stashed this in the SIZE_T_SIZE bytes directly before the
@@ -148,13 +148,16 @@ namespace my
 
     /* If the new block is smaller than the old one, we have to stop copying
        early so that we don't write off the end of the new block of memory. */
-    if (size < old_size)
+    if (size < old_size) {
       old_size = size;
+    }
+    PRINT_TRACE("Reallocating with a copy of size %zu.\n", size);
 
     /* This is a standard library call that performs a simple memory copy. */
     std::memcpy(newptr, ptr, old_size);
 
     /* Release the old block. */
+    PRINT_TRACE("...and now, freeing the old pointer.\n");
     free(ptr);
 
     /* Return a pointer to the new block. */
