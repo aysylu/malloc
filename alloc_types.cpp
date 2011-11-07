@@ -124,8 +124,8 @@ arena_chunk_hdr* arena_hdr::add_normal_chunk() {
     }
 
     // Check whether free_list is within bounds
-    if (free_list < mem_heap_lo() || free_list > mem_heap_hi()) {
-      printf("The free_list pointer points to memory outside of heap bounds: free_list=%lu, mem_heap_lo = %lu, mem_heap_hi=%lu\n", free_list, mem_heap_lo(), mem_heap_hi());
+    if ((free_list != NULL) && (free_list < mem_heap_lo() || free_list > mem_heap_hi())) {
+      printf("The free_list pointer points to memory outside of heap bounds: free_list=%p, mem_heap_lo = %p, mem_heap_hi=%p\n", free_list, mem_heap_lo(), mem_heap_hi());
       return -1;
     }
 
@@ -627,8 +627,8 @@ int arena_bin::check() {
   }
 
   //TODO: walk the rbtree using tree_next to check all available_runs
-  
-  return current_run->check(); 
+   
+  return current_run->check();
 }
 
 // Delegated malloc. Sorry, you're it - you're going to have to figure it out.
@@ -741,8 +741,8 @@ int small_run_hdr::check() {
     return -1;
   } 
   
-  // Check that free_list address is aligned -- this should never fail
-  if (!IS_ALIGNED(free_list)) {
+  // Check that free_list address is aligned (fcheck only when free_list != NULL)-- this should never fail
+  if ((free_list != NULL) && !IS_ALIGNED(free_list)) {
     printf("Free_list address is not aligned\n");
     return -1;
   }
