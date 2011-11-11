@@ -89,20 +89,10 @@ struct huge_run_hdr;
 #define INITIAL_CHUNK_SIZE (8 * PAGE_SIZE) // 32 kB
 #define INITIAL_CHUNK_PAGES (INITIAL_CHUNK_SIZE / PAGE_SIZE)
 // Maximum chunk size; maximum size given to an arena
-#define FINAL_CHUNK_SIZE (256 * PAGE_SIZE) // 1MB
+#define FINAL_CHUNK_SIZE (64 * PAGE_SIZE) // 1MB
 #define FINAL_CHUNK_PAGES (FINAL_CHUNK_SIZE / PAGE_SIZE)
 // The smallest aligned size that will hold a size_t value.
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
-
-// Anything larger than this size must be given at least one page
-// This must be updated if tables are updated!
-#define MAX_SMALL_SIZE (3840)
-// Anything larger than this must be given at least one chunk
-#define MAX_LARGE_SIZE (FINAL_CHUNK_SIZE - PAGE_SIZE) // Note - one page always allocated to header
-// Anything larger than this must be given at least *two* chunks
-#define MAX_SINGLE_CHUNK (FINAL_CHUNK_SIZE - HUGE_RUN_HDR_SIZE)
-// Anything large than this must be given at least *two* pages
-#define MAX_SINGLE_PAGE (PAGE_SIZE - LARGE_RUN_HDR_SIZE)
 
 // Rounds up to the nearest multiple of ALIGNMENT.
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1))
@@ -116,6 +106,16 @@ struct huge_run_hdr;
 #define SMALL_RUN_HDR_SIZE (ALIGN(sizeof(small_run_hdr)))
 #define LARGE_RUN_HDR_SIZE (ALIGN(sizeof(large_run_hdr)))
 #define HUGE_RUN_HDR_SIZE (ALIGN(sizeof(huge_run_hdr)))
+
+// Anything larger than this size must be given at least one page
+// This must be updated if tables are updated!
+#define MAX_SMALL_SIZE (3840)
+// Anything larger than this must be given at least one chunk
+#define MAX_LARGE_SIZE (FINAL_CHUNK_SIZE - PAGE_SIZE - LARGE_RUN_HDR_SIZE) // Note - one page always allocated to header
+// Anything larger than this must be given at least *two* chunks
+#define MAX_SINGLE_CHUNK (FINAL_CHUNK_SIZE - HUGE_RUN_HDR_SIZE)
+// Anything large than this must be given at least *two* pages
+#define MAX_SINGLE_PAGE (PAGE_SIZE - LARGE_RUN_HDR_SIZE)
 
 // All our pointers need to operate on byte-level math - let's make that a thing
 typedef uint8_t byte;

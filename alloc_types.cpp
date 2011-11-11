@@ -625,7 +625,7 @@ void* arena_chunk_hdr::fit_large_run(size_t consec_pages) {
   }
 
   // ** 2. Try to grow **
-  if ((FINAL_CHUNK_PAGES - num_pages_allocated) > consec_pages) {
+  if (( FINAL_CHUNK_PAGES - num_pages_allocated) > consec_pages) {
     // We've determined growing can work. Note: If there are no small runs, growing MAY work,
     // but you are on dangerous ground there.
     PRINT_TRACE("  Growing chunk for large run.\n");
