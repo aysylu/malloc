@@ -21,7 +21,9 @@
 
 size_t get_small_size_class(size_t real_size) {
   assert(real_size <= MAX_SMALL_SIZE);
-  // TODO: Replace with binary search, or something... good. 
+  // We've determined that performing linear search on the SMALL_SIZE_CLASSES
+  // performs much better than binary search, since SMALL_SIZE_CLASSES fits into L1 cache
+  // and all branch are predicted at 100% 
   int i;
   // In ascending size order, look for smallest fit
   for(i=0; i<NUM_SMALL_CLASSES; i++) {
