@@ -93,7 +93,7 @@ void arena_hdr::finalize() {
   for (ii = 0 ; ii < NUM_SMALL_CLASSES ; ii++) {
     bin_headers[ii] = arena_bin(this, (size_t)SMALL_CLASS_SIZES[ii], 
 				(size_t)SMALL_CLASS_RUN_PAGE_USAGE[ii]);
-    bin_headers[ii].finalize_trees();
+    bin_headers[ii].finalize();
   }
   // Also create and initialize a chunk. We can find its address.
   assert((mem_heap_lo() <= this) && (this <= mem_heap_hi()));
@@ -101,8 +101,11 @@ void arena_hdr::finalize() {
   arena_chunk_hdr foo = arena_chunk_hdr(this);
   assert((mem_heap_lo() <= new_address) && (new_address <= mem_heap_hi()));
   *new_address = foo;
+  new_address->finalize();
   // Take note that this, our first chunk, is the deepest chunk assigned.
   deepest = (size_t*)new_address;
+  // Initialize trees and locks
+  pthread_mutex_init(&arena_lock, NULL);
   tree_new(&normal_chunks);
 }
 
@@ -116,6 +119,9 @@ void* arena_hdr::malloc(size_t size) {
 
     // ** Use Huge Mode **
 
+    // If you're doing a huge allocation, you require the arena-level
+    // mutex, period.
+    pthread_mutex_lock(&arena_lock);
     PRINT_TRACE(" Using a HUGE allocation.\n");
     size_t num_chunks = get_num_chunks(size);
     PRINT_TRACE(" Number of chunks is %lu\n", num_chunks);
@@ -145,6 +151,7 @@ void* arena_hdr::malloc(size_t size) {
     // OK, header in place - let's give them back the pointer, skipping the header
     void* new_address = ((byte*) new_heap + HUGE_RUN_HDR_SIZE);
     PRINT_TRACE(" ...succeeded, at %p.\n", new_address);
+    pthread_mutex_unlock(&arena_lock);
     return (void*) (new_address);
 
   } else if (size <= MAX_SMALL_SIZE) {
@@ -198,6 +205,8 @@ void arena_hdr::free(void* ptr) {
   size_t header_offset = ((byte*)ptr - (byte*)this - ARENA_HDR_SIZE);
 
   if (header_offset % FINAL_CHUNK_SIZE <= PAGE_SIZE ) {
+    // If you're doing a huge deallocation, you require the arena mutex, period
+    pthread_mutex_lock(&arena_lock);
     PRINT_TRACE("Deallocating a HUGE chunk at %p.\n", ptr);
     // We know by computation this lies on a HUGE chunk boundary and
     // is a HUGE allocation
@@ -221,7 +230,7 @@ void arena_hdr::free(void* ptr) {
     } else {
       PRINT_TRACE(" Hey, we already have a free list!\n");
       size_t * curr = *(size_t**)free_list;
-      size_t * prev = free_list;
+      size_t * prev = (size_t*)free_list;
       PRINT_TRACE(" Recursing free list...\n");
 
       while ((curr != NULL) && (curr < (size_t*)header)) {
@@ -232,6 +241,8 @@ void arena_hdr::free(void* ptr) {
       *(size_t **)(prev) = (size_t *)header;
       *(size_t **)last_chunk_link_site = (size_t *)(curr);
     }
+
+    pthread_mutex_unlock(&arena_lock);
   } else {
     PRINT_TRACE("I saw a header_offset of %zu, so I'm asking a chunk to free.\n", header_offset);
     // Which chunk is this in? Try using header_offset / FINAL_CHUNK_SIZE to index
@@ -249,7 +260,8 @@ void* arena_hdr::realloc(void* ptr, size_t size, size_t old_size) {
     // If the new size isn't huge, no cleverness possible.
     if (size < MAX_LARGE_SIZE)
       return NULL;
-
+    
+    // If you're going to to a huge realloc, you need the arena mutex to manipulate chunks
     PRINT_TRACE("Trying clever realloc on a HUGE allocation.\n");
     // This is a huge allocation, and at this level we can decide what
     // to do with the chunks
@@ -262,6 +274,7 @@ void* arena_hdr::realloc(void* ptr, size_t size, size_t old_size) {
       return ptr;
     
     } else if (new_size_chunks < old_size_chunks) {
+      pthread_mutex_lock(&arena_lock);
       PRINT_TRACE("Realloc is much smaller; shrinking.\n");
       // Update header of this allocation
       header->num_chunks = new_size_chunks;
@@ -279,7 +292,7 @@ void* arena_hdr::realloc(void* ptr, size_t size, size_t old_size) {
       } else {
 	PRINT_TRACE(" Hey, we already have a free list!\n");
 	size_t * curr = *(size_t**)free_list;
-	size_t * prev = free_list;
+	size_t * prev = (size_t*)free_list;
 	PRINT_TRACE(" Recursing free list...\n");
 	
 	while ((curr != NULL) && (curr < (size_t*)header)) {
@@ -290,10 +303,12 @@ void* arena_hdr::realloc(void* ptr, size_t size, size_t old_size) {
 	*(size_t **)(prev) = (size_t *)header;
 	*(size_t **)last_chunk_link_site = (size_t *)(curr);
       }
-      // We resized down, but you can keep the pointer
+      // We resized down, but you can keep the pointe
+      pthread_mutex_unlock(&arena_lock);
       return ptr;
     
     } else { // new_size_chunks > old_size_chunks
+      pthread_mutex_lock(&arena_lock);
       PRINT_TRACE(" Realloc is much bigger; growing?\n");
       // We need to make this chunk bigger, or give up and 
       // alloc and free
@@ -304,6 +319,7 @@ void* arena_hdr::realloc(void* ptr, size_t size, size_t old_size) {
 	// The arena header is allowed to grow the heap
 	mem_sbrk((new_size_chunks-old_size_chunks) * FINAL_CHUNK_SIZE);
 	// In the end, nothing moves
+	pthread_mutex_unlock(&arena_lock);
 	return ptr;
       } else {
 	PRINT_TRACE(" Not on top, cannot grow.\n");
@@ -312,6 +328,7 @@ void* arena_hdr::realloc(void* ptr, size_t size, size_t old_size) {
 	// TODO: OPT: This can check the linked list for adjacency
 	// to determine that we may be able to consume adjacent
 	// freed space, even if we're not on top.
+	pthread_mutex_unlock(&arena_lock);
 	return NULL;
       }
     }
@@ -345,26 +362,8 @@ size_t arena_hdr::size_of_alloc(void* ptr) {
 
 }
 
-// Find a chunk that has a free page for a small run
-arena_chunk_hdr* arena_hdr::retrieve_normal_chunk() {
-  // We're getting corruption of normal_chunks; let's take extra care
-  assert((mem_heap_lo() <= &normal_chunks) && (&normal_chunks <= mem_heap_hi()));
-
-  node_t* avail_chunk = tree_first(&normal_chunks);
-  if (avail_chunk != NULL) {
-    // OK, we found one, simply give it back
-    return (arena_chunk_hdr*)avail_chunk;
-  } else {
-    // OK, the whole chunk is full, and we need a new chunk
-    // This shouldn't happen often
-    // Arena is going to increase the size of the heap!
-    return add_normal_chunk();
-  }
-};
-
-
-
 // We need more space. We've got no chunks to expand. Let's try this.
+// This can only be called if you ALREADY OWN the arena lock
 arena_chunk_hdr* arena_hdr::add_normal_chunk() {
   // We know we've currently got heap up to a chunk limit - if we didn't,
   // we would have grown a small chunk.
@@ -376,17 +375,20 @@ arena_chunk_hdr* arena_hdr::add_normal_chunk() {
     // Bind the free list head to its next element
     free_list = *(size_t**)free_list;
     *new_chunk = arena_chunk_hdr(this);
+    new_chunk->finalize();
     insert_chunk((node_t*)new_chunk);
     return new_chunk;
   } else {
     new_chunk = (arena_chunk_hdr*)mem_sbrk(INITIAL_CHUNK_SIZE);
     *new_chunk = arena_chunk_hdr(this);
+    new_chunk->finalize();
     deepest = (size_t*)new_chunk; // Take note that this is now the deepst chunk
     insert_chunk((node_t*)new_chunk); // Also, it's new and has space in it
   return new_chunk;
   }
 }
 
+// This can only be called if you ALREADY OWN the arena lock
 void arena_hdr::insert_chunk(node_t* chunk) {
   assert((mem_heap_lo() <= chunk) && (chunk <= mem_heap_hi()));
   assert((mem_heap_lo() <= &normal_chunks) && (&normal_chunks <= mem_heap_hi()));
@@ -396,6 +398,7 @@ void arena_hdr::insert_chunk(node_t* chunk) {
 }
 
 // A chunk is full. Drop it.
+// This can only be called if you ALREADY OWN the arena lock
 void arena_hdr::filled_chunk(node_t* filled) {
   // Removing something not in the tree is bad!
   assert(tree_search(&normal_chunks, filled) != NULL);
@@ -404,6 +407,7 @@ void arena_hdr::filled_chunk(node_t* filled) {
 
 // Tell a chunk how many pages it is allowed to be, knowing that it has
 // requested more pages.
+// This can only be called if you ALREADY OWN the arena lock
 size_t arena_hdr::grow(arena_chunk_hdr* chunk) {
   if ((size_t*)chunk == deepest) {
     PRINT_TRACE("Growing the deepest chunk.\n");
@@ -419,6 +423,7 @@ size_t arena_hdr::grow(arena_chunk_hdr* chunk) {
 }
 
 // You know, for a fact, that you want a chunk grown to max size
+// This can only be called if you ALREADY OWN the arena lock
 size_t arena_hdr::grow_max(arena_chunk_hdr* chunk) {
   if ((size_t*)chunk == deepest) {
     PRINT_TRACE("Maxing out a chunk!\n");
@@ -444,7 +449,8 @@ arena_chunk_hdr::arena_chunk_hdr(arena_hdr* _parent) {
 
 }
 
-void arena_chunk_hdr::finalize_trees() {
+void arena_chunk_hdr::finalize() {
+  pthread_mutex_init(&chunk_lock, NULL);
   tree_new(&clean_page_runs);
 }
 
@@ -456,6 +462,7 @@ void arena_chunk_hdr::free(void* ptr) {
 	 (page_map[bin] == SMALL_RUN_FRAGMENT) ||
 	 (page_map[bin] == LARGE_RUN_HEADER));
   if (page_map[bin] == LARGE_RUN_HEADER) {
+    pthread_mutex_lock(&chunk_lock);
     size_t num_pages = ((large_run_hdr*)get_page_location(bin))->num_pages;
     int ii;
     for(ii = 0 ; ii < num_pages ; ii++) {
@@ -465,11 +472,14 @@ void arena_chunk_hdr::free(void* ptr) {
     // Note that cells have been returned for rapid bookkeeping
     if ((num_pages_available == 0) && (num_pages_allocated == FINAL_CHUNK_PAGES)) {
       // We're about to stop being full
+      pthread_mutex_lock(&(parent->arena_lock));
       PRINT_TRACE("Inserting a chunk into normal chunks.\n");
       assert(tree_search(&(parent->normal_chunks), (node_t*)this) == NULL);
       tree_insert(&(parent->normal_chunks), (node_t*)this);
+      pthread_mutex_unlock(&(parent->arena_lock));
     }
     num_pages_available += num_pages;
+    pthread_mutex_unlock(&chunk_lock);
   } else {
     // You'll need to find the appropriate control structure.
     while (page_map[bin] == SMALL_RUN_FRAGMENT) {
@@ -503,6 +513,7 @@ void* arena_chunk_hdr::realloc(void* ptr, size_t size, size_t old_size) {
       // Perfect! It stays in place
       return ptr;
     } else if (new_size_pages < old_size_pages) { 
+      pthread_mutex_lock(&chunk_lock);
       // We can free some pages off the end
       PRINT_TRACE(" ...so we're freeing some off the end.\n");
       ((large_run_hdr*)get_page_location(bin))->num_pages = new_size_pages;
@@ -513,6 +524,7 @@ void* arena_chunk_hdr::realloc(void* ptr, size_t size, size_t old_size) {
       // Make sure to note these pages are actually available
       num_pages_available += (old_size_pages - new_size_pages);
       // Leave original poitner untouched
+      pthread_mutex_unlock(&chunk_lock);
       return ptr;
     } else {
       PRINT_TRACE("  ...so we're trying to extend.\n");
@@ -521,14 +533,17 @@ void* arena_chunk_hdr::realloc(void* ptr, size_t size, size_t old_size) {
       // TODO: NEXT: Chunk may be growable
 
       // It's possible we're asking to extend off the end and should abort
+      pthread_mutex_lock(&chunk_lock);
       if (bin + new_size_pages > num_pages_allocated) {
 	PRINT_TRACE("  ...but we can't.\n");
+	pthread_mutex_unlock(&chunk_lock);
 	return NULL;
       }
       int ii;
       for (ii = old_size_pages ; ii < new_size_pages ; ii++) {
 	if (page_map[bin + ii] != FREE) {
 	  PRINT_TRACE("  ..but we ran into something.\n");
+	  pthread_mutex_unlock(&chunk_lock);
 	  return NULL;
 	}
       }
@@ -538,6 +553,7 @@ void* arena_chunk_hdr::realloc(void* ptr, size_t size, size_t old_size) {
       for (ii = old_size_pages ; ii < new_size_pages ; ii++) {
 	page_map[bin + ii] = LARGE_RUN_FRAGMENT;
       }
+      pthread_mutex_unlock(&chunk_lock);
       return ptr;
     }
   } else {
@@ -590,6 +606,7 @@ void* arena_chunk_hdr::fit_large_run(size_t consec_pages) {
   // 3. If you're *sure* you grew enough to fit, fit.
 
   // ** 1. If you have enough free pages, the attempt can be made **
+  pthread_mutex_lock(&chunk_lock);
   if (consec_pages <= num_pages_available) {
     PRINT_TRACE("   Making fit attempt, at least.\n");
     int consec = 0;
@@ -611,11 +628,14 @@ void* arena_chunk_hdr::fit_large_run(size_t consec_pages) {
 	  *(large_run_hdr*)new_address = large_run_hdr(consec_pages);
 	  num_pages_available -= consec_pages;
 	  if ((num_pages_available == 0) && (num_pages_allocated == FINAL_CHUNK_PAGES)) {
+	    pthread_mutex_lock(&(parent->arena_lock));
 	    PRINT_TRACE("--Chunk is definitely full--\n");
 	    assert(tree_search(&(parent->normal_chunks), (node_t*)this) != NULL);
 	    tree_remove(&(parent->normal_chunks), (node_t*)this);
+	    pthread_mutex_unlock(&(parent->arena_lock));
 	  }
 	  // This returns the *address* for use.
+	  pthread_mutex_unlock(&chunk_lock);
 	  return (new_address + LARGE_RUN_HDR_SIZE);
 	}
       } else {
@@ -662,14 +682,18 @@ void* arena_chunk_hdr::fit_large_run(size_t consec_pages) {
     // TREE HOSED HERE
     num_pages_available -= consec_pages;
     if ((num_pages_available == 0) && (num_pages_allocated == FINAL_CHUNK_PAGES)) {
+      pthread_mutex_lock(&(parent->arena_lock));
       PRINT_TRACE("--Chunk is definitely full--\n");
       assert(tree_search(&(parent->normal_chunks), (node_t*)this) != NULL);
       tree_remove(&(parent->normal_chunks), (node_t*)this);
+      pthread_mutex_lock(&(parent->arena_lock));
     }
+    pthread_mutex_unlock(&chunk_lock);
     return (new_address + LARGE_RUN_HDR_SIZE);
 
   } else {
     PRINT_TRACE("  ...but this chunk can't fit it even by growing (currently %zu pages).\n", this->num_pages_allocated);
+    pthread_mutex_unlock(&chunk_lock);
     return NULL;
   }
 }
@@ -681,6 +705,8 @@ small_run_hdr* arena_chunk_hdr::carve_small_run(arena_bin* owner) {
 
   size_t consec_pages = owner->run_length / PAGE_SIZE;
 
+  pthread_mutex_lock(&chunk_lock);
+  
   if (consec_pages < num_pages_available) {
     // We can at least try to fit
     
@@ -709,6 +735,7 @@ small_run_hdr* arena_chunk_hdr::carve_small_run(arena_bin* owner) {
 	  owner->run_available((node_t*) new_page);
 	  num_pages_available -= consec_pages;
 	  // This returns the *run* for use.
+	  pthread_mutex_unlock(&chunk_lock);
 	  return new_page;
 	}
       } else {
@@ -722,7 +749,9 @@ small_run_hdr* arena_chunk_hdr::carve_small_run(arena_bin* owner) {
     PRINT_TRACE("   Growing chunk for small run.\n");
     size_t old_allocation = num_pages_allocated;
     while ((num_pages_allocated - old_allocation) < consec_pages) {
+      pthread_mutex_lock(&(parent->arena_lock));
       num_pages_allocated = parent->grow(this);
+      pthread_mutex_unlock(&(parent->arena_lock));
       PRINT_TRACE("  ...%zu big...\n", num_pages_allocated);
     }
     num_pages_available = (num_pages_allocated - old_allocation);
@@ -738,10 +767,12 @@ small_run_hdr* arena_chunk_hdr::carve_small_run(arena_bin* owner) {
     new_page->finalize();
     owner->run_available((node_t*) new_page);
     num_pages_available -= consec_pages;
+    pthread_mutex_unlock(&chunk_lock);
     return new_page;
 
   } else {
     PRINT_TRACE("   Even a grown chunk won't fit this; try somewhere else.\n");
+    pthread_mutex_unlock(&chunk_lock);
     return NULL;
   }
   
@@ -778,13 +809,16 @@ arena_bin::arena_bin(arena_hdr* _parent, size_t _object_size, size_t num_pages) 
   available_registrations = (run_length - SMALL_RUN_HDR_SIZE) / object_size;
 }
 
-void arena_bin::finalize_trees() {
+void arena_bin::finalize() {
+  // Finalize trees and locks once heaped
+  pthread_mutex_init(&bin_lock, NULL);
   tree_new(&available_runs);
 }
 
 // Delegated malloc. Sorry, you're it - you're going to have to figure it out.
 void* arena_bin::malloc() {
   PRINT_TRACE(" Entering malloc at the arena_bin level.\n");
+  pthread_mutex_lock(&bin_lock);
   // If we have a current run, we can ask it to malloc. But otherwise...
   if (current_run == NULL) {
     PRINT_TRACE("  No current run; choosing from tree.\n");
@@ -798,6 +832,7 @@ void* arena_bin::malloc() {
       PRINT_TRACE("  No good, we need a chunk from a parent.\n");
       node_t* new_chunk; 
       byte* new_address;
+      // Care: Do we need to lock on this read?
       new_chunk = tree_first(&parent->normal_chunks);
       while (new_chunk != NULL) {
 	PRINT_TRACE("  ...asking chunk %p to fit %zu pages...\n", new_chunk, run_length/PAGE_SIZE);
@@ -813,7 +848,9 @@ void* arena_bin::malloc() {
       if (new_address == NULL) {
 	PRINT_TRACE("  Argh! There's not a single chunk we can work with.\n");
 	// More space! Parent, take care of it.
+	pthread_mutex_lock(&(parent->arena_lock));
 	new_chunk = (node_t*)parent->add_normal_chunk();
+	pthread_mutex_unlock(&(parent->arena_lock));
 	current_run = ((arena_chunk_hdr*)new_chunk)->carve_small_run(this);
       }
     }
@@ -824,7 +861,9 @@ void* arena_bin::malloc() {
   PRINT_TRACE("  Assigning this allocation to the run at %p.\n", current_run);
   PRINT_TRACE("  ...which is serving objects of size %zu.\n", current_run->parent->object_size);
   // We're set up either way, so now we can just have the run malloc
-  return current_run->malloc(); 
+  void* ret = current_run->malloc(); 
+  pthread_mutex_unlock(&bin_lock);
+  return ret;
 }
 
 void arena_bin::run_available(node_t* avail_run) {
@@ -878,6 +917,7 @@ small_run_hdr::small_run_hdr(arena_bin* _parent) {
 }
 
 void small_run_hdr::finalize() {
+  //pthread_mutex_init(&small_run_lock, NULL);
   // The first cell is offset from the header by the header size
   next = (size_t*)((byte*)this + SMALL_RUN_HDR_SIZE);//
 }
@@ -917,6 +957,8 @@ void* small_run_hdr::malloc() {
 }
 
 void small_run_hdr::free(void* ptr) {
+  // To free this, we need to take out the bin lock
+  pthread_mutex_lock(&(parent->bin_lock));
   // All right. We need to add this cell to our free list, and write
   // a free list pointer to its address.
   assert((size_t*)free_list != (size_t*)ptr);
@@ -931,6 +973,7 @@ void small_run_hdr::free(void* ptr) {
     // This indicates we were full. We're not anymore, so mark us available.
     parent->run_available((node_t*)this);
   }
+  pthread_mutex_unlock(&(parent->bin_lock));
 }
 
 void* small_run_hdr::realloc(void* ptr, size_t size, size_t old_size) {

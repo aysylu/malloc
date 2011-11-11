@@ -3,9 +3,10 @@
 
 #include <stdint.h>
 #include <stdlib.h>
-#include <string.h> // contains memset
+#include <string.h> // Contains memset
+#include <pthread.h> // Contains infinite amounts of fun
 #include "rbtree.h"
-#include "memlib.h" // Single-threaded case only - grants access to sbrk
+#include "memlib.h" // Access to sbrk, mem_heap_lo, mem_heap_hi
 
 #define MAX_SIZE_T (size_t)(-1)
 
@@ -155,8 +156,8 @@ const uint8_t SMALL_CLASS_RUN_PAGE_USAGE[NUM_SMALL_CLASSES] =
 // Other structures are defined in descending size order.
 
 struct arena_bin {
-  //LOCK GOES HERE IN FUTURE
   arena_hdr* parent;
+  pthread_mutex_t bin_lock; // Must be taken out to create or free chunks, or to do HUGE allocations
   small_run_hdr* current_run; // Pointer to header of current run
   tree_t available_runs; // RB tree of all runs with free space
   size_t object_size; // Size of object stored here, e.g. 192 bytes
@@ -167,7 +168,7 @@ struct arena_bin {
   arena_bin(); // "Decoy constructor"
   arena_bin(arena_hdr* parent, size_t _object_size, size_t num_pages);
   // Finalizer - once this is heaped
-  void finalize_trees();
+  void finalize();
 
   // Internal consistency checker
   int check();
@@ -191,9 +192,9 @@ struct arena_bin {
  *********/
 
 struct arena_hdr {
-  // LOCK GOES HERE IN FUTURE
+  pthread_mutex_t arena_lock;
   tree_t normal_chunks; // rb tree of chunks that have large/small metadata
-                        // and that still have available space
+                                 // and that still have available space
   size_t* deepest; // Points to the deepest chunk or huge run allocated
   size_t* free_list; // Points to a free list of chunks
   arena_bin bin_headers[NUM_SMALL_CLASSES]; // Store run metadata
@@ -213,8 +214,6 @@ struct arena_hdr {
   // Determine size of an allocation
   size_t size_of_alloc(void* ptr);
 
-  // Find a chunk with space
-  arena_chunk_hdr* retrieve_normal_chunk();
   // Make a new chunk for small/large allocations
   arena_chunk_hdr* add_normal_chunk();
   // Inserting a new chunk into the arena
@@ -243,17 +242,18 @@ struct arena_hdr {
 
 struct arena_chunk_hdr {
   node_t chunk_tree_node; // Allows this to be part of an rbtree of runs for small/large assignments
+  pthread_mutex_t chunk_lock;
   arena_hdr* parent; // Ptr to Arena
   size_t num_pages_available;
   size_t num_pages_allocated; // INITIAL_CHUNK_SIZE <= this <= FINAL_CHUNK_SIZE
-                              // ...but don't forget the first page is the header
+                                       // ...but don't forget the first page is the header
   // TODO: This tree is currently unused
   tree_t clean_page_runs; // For clean *whole pages* for Large allocation
   uint8_t page_map[(FINAL_CHUNK_SIZE / PAGE_SIZE)]; // Stores state of each page
   // Note above - header data occupies the first free page slot.
   // Constructor
   arena_chunk_hdr(arena_hdr* _parent);
-  void finalize_trees();
+  void finalize();
   // Internal consistency checker
   int check();
 
@@ -283,7 +283,7 @@ struct arena_chunk_hdr {
 // Header entry for a small run, at the top of its page
 struct small_run_hdr {
   node_t run_tree_node; // Allows this to be part of a rbtree of runs
-  // LOCK GOES HERE IN FUTURE
+  //pthread_mutex_t small_run_lock;
   arena_bin* parent; // Pointer to our parent bin
   size_t* free_list; // Pointer to start block of free list
   size_t* next; // Pointer to first *never-allocated* block
