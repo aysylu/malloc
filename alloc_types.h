@@ -90,7 +90,7 @@ struct huge_run_hdr;
 #define INITIAL_CHUNK_SIZE (8 * PAGE_SIZE) // 32 kB
 #define INITIAL_CHUNK_PAGES (INITIAL_CHUNK_SIZE / PAGE_SIZE)
 // Maximum chunk size; maximum size given to an arena
-#define FINAL_CHUNK_SIZE (64 * PAGE_SIZE) // 1MB
+#define FINAL_CHUNK_SIZE (64 * PAGE_SIZE) // 256 kB
 #define FINAL_CHUNK_PAGES (FINAL_CHUNK_SIZE / PAGE_SIZE)
 // The smallest aligned size that will hold a size_t value.
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
