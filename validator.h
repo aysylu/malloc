@@ -71,14 +71,14 @@ static int add_range(Type *impl, range_t **ranges, char *lo,
   /* Payload addresses must be ALIGNMENT-byte aligned */
   //We don't check whether hi address is aligned or not because we have no way of knowing what is the high address that has been passed to us
   if (!IS_ALIGNED(lo)) {
-    int ret = sprintf(msg, "Payload addresses %p and %p are not aligned\n", lo, hi);
+    int ret = sprintf(msg, "Low payload address %p is not aligned\n", lo);
     printf("%s", msg);
     return 0;
   }
 
   /* The payload must lie within the extent of the heap */
-  if (lo <= mem_heap_lo() || hi >= mem_heap_hi()) {
-    int ret = sprintf(msg, "Payload must lie within the extent of the heap; the payload addresses are %p and %p, and the heapsize is %lu\n", lo, hi, mem_heapsize());
+  if (lo <= mem_heap_lo()) {
+    int ret = sprintf(msg, "Payload must lie within the extent of the heap; the low payload address is %p, and the heap's lo address is %lu\n", lo, mem_heap_lo());
     printf("%s", msg);
     return 0;
   }
