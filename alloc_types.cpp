@@ -120,7 +120,7 @@ void* arena_hdr::malloc(size_t size) {
   if (size > MAX_LARGE_SIZE) {
 
     // ** Use Huge Mode **
-
+    void * new_address = NULL;
     // If you're doing a huge allocation, you require the arena-level
     // mutex, period.
     pthread_mutex_lock(&arena_lock);
@@ -132,26 +132,63 @@ void* arena_hdr::malloc(size_t size) {
       // TODO: We currently don't have a free list for chunks
       // Later we'll have a structure that coalesces chunks
       // and uses them to allocate huge objects
-      PRINT_TRACE(" The free list has some space; try to pull something from the free list");
+      PRINT_TRACE(" The free list has some space; try to pull something from the free list\n");
+      // Try to find space to place this allocation
+      // Traverse the free list to find if there's a contiguous block of chunks
+      size_t num_contiguous_chunks = 0;
+
+      size_t * curr = *(size_t**)free_list;
+      size_t * prev = (size_t*)free_list;
+      PRINT_TRACE(" Traversing the list to find contiguous free chunks\n");
+
+      // Iterate over the free_list until
+      // we either run off the end of the list OR
+      // we find the necessary amount of contiguous free chunks
+      // to place our huge allocation in
+      while ((curr != NULL) && (num_contiguous_chunks == num_chunks)) {
+        if (curr - prev == FINAL_CHUNK_SIZE) {
+          // curr and prev pointer are spaced exactly one chunk size apart
+          // so they are contiguous
+          num_contiguous_chunks += 1;
+        } else {
+          // We either didn't find any contiguous free chunks yet OR
+          // the number of contiguous chunks wasn't big enough
+          num_contiguous_chunks = 0; //reset the accumulator
+        }
+        
+	prev = curr;
+	curr = (size_t *) *curr;
+      }
+
+      if (num_contiguous_chunks == num_chunks) {
+        // We found the perfect spot in the free_list to place our huge allocation in
+        PRINT_TRACE("We found the perfect spot in the free list to place our huge allocation in\n");
+        new_address = prev - num_chunks;
+         
+      } else {
+        // There were no contiguous free chunks that would fit our huge allocation
+        // TODO: Handle the same we would handle it if the free_list was empty
+      }
+    } else {
+      // Uh-oh. The free list couldn't help us. This needs a *new chunk*.
+      // Arena is going to demand new space on the heap! Single thread, everything fine.
+      PRINT_TRACE(" Creating a new chunk for this allocation.\n");
+      // A point of care: It may be the case that we have an ungrown arena chunk
+      // on top right now. We need to align the new chunk on top of that.
+      if ((mem_heapsize() - ARENA_HDR_SIZE) % FINAL_CHUNK_SIZE) {
+        // Allocate heap up to the next chunk boundary. If we got here, this is a small run.
+        grow_max((arena_chunk_hdr*)deepest);
+      }
+      void* new_heap = mem_sbrk(num_chunks * FINAL_CHUNK_SIZE);
+      PRINT_TRACE(" Increased the heap by %lu\n", num_chunks * FINAL_CHUNK_SIZE);
+      assert(new_heap != NULL);
+      // Write a new huge_run_hdr into the new space.
+      *(huge_run_hdr*)new_heap = huge_run_hdr(size, num_chunks);
+      // Take note of the deepst object assigned
+      deepest = (size_t*)new_heap;
+      // OK, header in place - let's give them back the pointer, skipping the header
+      new_address = ((byte*) new_heap + HUGE_RUN_HDR_SIZE);
     }
-    // Uh-oh. The free list couldn't help us. This needs a *new chunk*.
-    // Arena is going to demand new space on the heap! Single thread, everything fine.
-    PRINT_TRACE(" Creating a new chunk for this allocation.\n");
-    // A point of care: It may be the case that we have an ungrown arena chunk
-    // on top right now. We need to align the new chunk on top of that.
-    if ((mem_heapsize() - ARENA_HDR_SIZE) % FINAL_CHUNK_SIZE) {
-      // Allocate heap up to the next chunk boundary. If we got here, this is a small run.
-      grow_max((arena_chunk_hdr*)deepest);
-    }
-    void* new_heap = mem_sbrk(num_chunks * FINAL_CHUNK_SIZE);
-    PRINT_TRACE(" Increased the heap by %lu\n", num_chunks * FINAL_CHUNK_SIZE);
-    assert(new_heap != NULL);
-    // Write a new huge_run_hdr into the new space.
-    *(huge_run_hdr*)new_heap = huge_run_hdr(size, num_chunks);
-    // Take note of the deepst object assigned
-    deepest = (size_t*)new_heap;
-    // OK, header in place - let's give them back the pointer, skipping the header
-    void* new_address = ((byte*) new_heap + HUGE_RUN_HDR_SIZE);
     PRINT_TRACE(" ...succeeded, at %p.\n", new_address);
     pthread_mutex_unlock(&arena_lock);
     return (void*) (new_address);
