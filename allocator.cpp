@@ -6,7 +6,7 @@
 #include "alloc_types.h"
 #ifdef DEBUG
 #include "visualizer.h"
-#define DEBUG_CHECK_AGGRESSIVE
+// #define DEBUG_CHECK_AGGRESSIVE
 #endif
 namespace my
 {
@@ -14,7 +14,7 @@ namespace my
    * This checks that after the allocator has been initialized,
    * it returns a valid pointer to arena_hdr
    * Returns 0 iff none of the invariants are violated;
-   * returns -1 otherwise.
+   * returns a negative error code otherwise.
    */
   int allocator::check()
   {

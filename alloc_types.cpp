@@ -175,6 +175,7 @@ void* arena_hdr::malloc(size_t size) {
     PRINT_TRACE(" Using a Large allocation.\n");
     // We need to ask chunks to try to fit this thing.
     // Fortunately, that is *probably* just a tree lookup.
+    pthread_mutex_lock(&arena_lock);
     node_t* lowest_normal_chunk = tree_first(&normal_chunks);
     size_t consec_pages = get_num_pages(size);
     byte* new_address;
@@ -184,13 +185,18 @@ void* arena_hdr::malloc(size_t size) {
 	if (new_address != NULL) {
 	  // Got one! Bookkeeping has been done already
 	  PRINT_TRACE(" ...succeeded, at %p.\n", new_address);
+	  pthread_mutex_unlock(&arena_lock);
 	  return new_address;
 	}
       lowest_normal_chunk = tree_next(&normal_chunks, lowest_normal_chunk);
     }
+    pthread_mutex_unlock(&arena_lock);
     PRINT_TRACE(" ...couldn't find any space, so we need a new chunk.\n");
-    // Allocate and prepare a new chunk
+    // Allocate and prepare a new chunk. 
+    // To do that, you must own the arena lock!
+    pthread_mutex_lock(&arena_lock);
     arena_chunk_hdr* new_chunk = add_normal_chunk();
+    pthread_mutex_unlock(&arena_lock);
     // A new chunk *will* have space for a Large allocation
     return new_chunk->fit_large_run(consec_pages);
   }
@@ -655,7 +661,9 @@ void* arena_chunk_hdr::fit_large_run(size_t consec_pages) {
     size_t old_allocation = num_pages_allocated;
     // Grow generously
     while ((num_pages_allocated - old_allocation) < consec_pages) {
+      pthread_mutex_lock(&(parent->arena_lock));
       num_pages_allocated = parent->grow(this);
+      pthread_mutex_unlock(&(parent->arena_lock));
       PRINT_TRACE("  ...%zu big...\n", num_pages_allocated);
     }
     num_pages_available += (num_pages_allocated - old_allocation);
@@ -997,25 +1005,40 @@ void* small_run_hdr::realloc(void* ptr, size_t size, size_t old_size) {
 /*
  * This checks that our arena is well-formed
  * returns 0 iff your heap is consistent
- * return -1 otherwise
+ * return a negative error code otherwise
  */
+
+#define ARENA_HDR_ERROR -32
+#define CHUNK_HDR_ERROR -64
+#define BIN_HDR_ERROR -128
+#define RUN_HDR_ERROR -256
+#define PAGE_MAP_ERROR -512
+
+#define ALIGNMENT_ERROR -1
+#define BOUNDS_ERROR -2
+
+#define PAGE_MAP_WILD_FRAGMENT_ERROR -2
+#define PAGE_MAP_GROWTH_ERROR -4
+#define PAGE_MAP_SMALL_TRAILER_ERROR -8
+#define PAGE_MAP_LARGE_TRAILER_ERROR -16
+
 int arena_hdr::check() {
   // Check whether deepest is within heap bounds
   if (deepest < mem_heap_lo() || deepest > mem_heap_hi()) {
     printf("The deepest chunk or huge run we allocated is not within heap bounds\n");
-    return -1;
+    return ARENA_HDR_ERROR;
   }
   
   // Check whether free_list is within bounds
   if ((free_list != NULL) && (free_list < mem_heap_lo() || free_list > mem_heap_hi())) {
     printf("The free_list pointer points to memory outside of heap bounds: free_list=%p, mem_heap_lo = %p, mem_heap_hi=%p\n", free_list, mem_heap_lo(), mem_heap_hi());
-    return -1;
+    return ARENA_HDR_ERROR + BOUNDS_ERROR;
   }
   
   // Check whether deepest element address is aligned
   if (!IS_ALIGNED(deepest)) {
     printf("The deepest chunk or huge run is not aligned\n");
-    return -1;
+    return ARENA_HDR_ERROR + ALIGNMENT_ERROR;
   }
   
   // Verify that all chunks in a free_list are actually free
@@ -1026,18 +1049,21 @@ int arena_hdr::check() {
   
   // Walk the rbtree using tree_next to check chunks
   node_t* a_chunk = tree_first(&normal_chunks);
+  int check;
   while (a_chunk != NULL) {
     // Delegate to internal checker
-    if (((arena_chunk_hdr*)a_chunk)->check() != 0)
-      return -1;
+    check = ((arena_chunk_hdr*)a_chunk)->check();
+    if (check != 0)
+      return check;
     a_chunk = tree_next(&normal_chunks, a_chunk);
   }
 
   // Delegate the rest of the check to arena_bin
   for (int i = 0; i < NUM_SMALL_CLASSES; i++) {
     // Delegate to internal checker
-    if (bin_headers[i].check() != 0)
-      return -1;
+    check = bin_headers[i].check();
+    if (check != 0)
+      return check;
   }
 
   // No complaints!
@@ -1046,12 +1072,15 @@ int arena_hdr::check() {
 
 int arena_chunk_hdr::check() {
   // Must be aligned
-  if (!IS_ALIGNED(this))
-    return -1;
+  if (!IS_ALIGNED(this)) {
+    printf("Arena chunk header at %p is not aligned!\n", this);
+    return CHUNK_HDR_ERROR + ALIGNMENT_ERROR;
+  }
 
   if (page_map[0] != HEADER) { 
     // The first page in an arena must be a header.
-    return -1;
+    printf("Page map error: Page 0 of chunk %p is not marked as header.\n", this);
+    return CHUNK_HDR_ERROR;
   }
 
   int ii=1, jj;
@@ -1071,7 +1100,7 @@ int arena_chunk_hdr::check() {
       // we expect to see a certain number of fragment pages
       for (jj = 1 ; jj < (wkg_small_run->parent->run_length / PAGE_SIZE) ; jj++) {
 	if (page_map[ii+jj] != SMALL_RUN_FRAGMENT)
-	  return -1;
+	  return PAGE_MAP_ERROR + PAGE_MAP_SMALL_TRAILER_ERROR;
       }
       ii += jj;
       break;
@@ -1080,7 +1109,7 @@ int arena_chunk_hdr::check() {
       wkg_large_run = (large_run_hdr*)get_page_location(ii);
       for (jj = 1; jj < (wkg_large_run->num_pages) ; jj++) {
 	if (page_map[ii+jj] != LARGE_RUN_FRAGMENT)
-	  return -1;
+	  return PAGE_MAP_ERROR + PAGE_MAP_LARGE_TRAILER_ERROR;
       }
       ii += jj;
       break;
@@ -1089,26 +1118,28 @@ int arena_chunk_hdr::check() {
     case HEADER:
     case LARGE_RUN_FRAGMENT:
     case SMALL_RUN_FRAGMENT:
-      return -1;
+      return PAGE_MAP_ERROR + PAGE_MAP_WILD_FRAGMENT_ERROR;
     }
   }
 
   for ( ; ii < FINAL_CHUNK_PAGES ; ii++) {
     // All unallocated chunks must be free
     if (page_map[ii] != FREE)
-      return -1;
+      return PAGE_MAP_ERROR + PAGE_MAP_GROWTH_ERROR;
   }
 
   // Non-full runs in the page map will be caught
   // by another part of the checker, but if you have
   // a small run with every cell filled, you should
   // ask it to check.
+  int check;
   for( ii = 1 ; ii < num_pages_allocated ; ii++) {
     if (page_map[ii] == SMALL_RUN_HEADER) {
       wkg_small_run = (small_run_hdr*)(get_page_location(ii));
-      if ((wkg_small_run->free_cells == 0) &&
-	  (wkg_small_run->check() != 0)) {
-	return -1;
+      if (wkg_small_run->free_cells == 0) {
+	check = wkg_small_run->check();
+	if (check != 0)
+	  return check;
       }
     }
   }
@@ -1120,22 +1151,24 @@ int arena_chunk_hdr::check() {
 int arena_bin::check() {
   // Like everything else, this header data must be aligned
   if (!IS_ALIGNED(this))
-    return -1;
+    return BIN_HDR_ERROR + ALIGNMENT_ERROR;
 
   // The current run pointer must be null, or a pointer to a small run header
   // We can bounds-check that pointer
   if (current_run != NULL) {
     if ((current_run < mem_heap_lo()) ||
 	(current_run > mem_heap_hi())) {
-      return -1;
+      return BIN_HDR_ERROR;
     }
   }
 
   // Crawl run tree, delegating check to small runs
   node_t* this_run = tree_first(&available_runs);
+  int check;
   while (this_run != NULL) {
-    if (((small_run_hdr*)this_run)->check() != 0)
-      return -1;
+    check = ((small_run_hdr*)this_run)->check();
+    if (check != 0)
+      return check;
     this_run = tree_next(&available_runs, this_run);
   }
 
@@ -1146,20 +1179,20 @@ int arena_bin::check() {
 int small_run_hdr::check() {
   // Control structure must be aligned
   if (!IS_ALIGNED(this))
-    return -1;
+    return RUN_HDR_ERROR + ALIGNMENT_ERROR;
 
   // Next pointer must be in bounds - if we have free cells
   // It may slightly overrun otherwise, but it also becomes unused
   // in that case.
   if (free_cells && ((byte*)next - (byte*)this > parent->run_length))
-    return -1;
+    return RUN_HDR_ERROR;
 
   // Follow free list with bounds checking - pointer must lie
   // within this cell
   size_t* follow_free = free_list;
   while (follow_free != NULL) {
     if ((byte*)follow_free - (byte*)this > parent->run_length)
-      return -1;
+      return RUN_HDR_ERROR;
     follow_free = (size_t*)(*follow_free);
   }
 
