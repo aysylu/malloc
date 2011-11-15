@@ -28,9 +28,9 @@
 #define PRINT_TRACE(...) do {} while(0);// Do nothing
 #endif
 
-/**************
- * Finalizers *
- **************/
+/*****************
+ * On Finalizers *
+ *****************/
 
 // Our many awesome control structures must be created on the stack,
 // then written to the heap. This means no pointer initialization during 

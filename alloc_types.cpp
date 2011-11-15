@@ -457,7 +457,7 @@ arena_chunk_hdr::arena_chunk_hdr(arena_hdr* _parent) {
 }
 
 void arena_chunk_hdr::finalize() {
-  pthread_mutex_init(&chunk_lock, NULL);
+  lock_init();
   //tree_new(&clean_page_runs);
 }
 
@@ -469,7 +469,7 @@ void arena_chunk_hdr::free(void* ptr) {
 	 (page_map[bin] == SMALL_RUN_FRAGMENT) ||
 	 (page_map[bin] == LARGE_RUN_HEADER));
   if (page_map[bin] == LARGE_RUN_HEADER) {
-    pthread_mutex_lock(&chunk_lock);
+    lock();
     size_t num_pages = ((large_run_hdr*)get_page_location(bin))->num_pages;
     int ii;
     for(ii = 0 ; ii < num_pages ; ii++) {
@@ -486,7 +486,7 @@ void arena_chunk_hdr::free(void* ptr) {
       parent->unlock();
     }
     num_pages_available += num_pages;
-    pthread_mutex_unlock(&chunk_lock);
+    unlock();
   } else {
     // You'll need to find the appropriate control structure.
     while (page_map[bin] == SMALL_RUN_FRAGMENT) {
@@ -520,7 +520,7 @@ void* arena_chunk_hdr::realloc(void* ptr, size_t size, size_t old_size) {
       // Perfect! It stays in place
       return ptr;
     } else if (new_size_pages < old_size_pages) { 
-      pthread_mutex_lock(&chunk_lock);
+      lock();
       // We can free some pages off the end
       PRINT_TRACE(" ...so we're freeing some off the end.\n");
       ((large_run_hdr*)get_page_location(bin))->num_pages = new_size_pages;
@@ -531,7 +531,7 @@ void* arena_chunk_hdr::realloc(void* ptr, size_t size, size_t old_size) {
       // Make sure to note these pages are actually available
       num_pages_available += (old_size_pages - new_size_pages);
       // Leave original poitner untouched
-      pthread_mutex_unlock(&chunk_lock);
+      unlock();
       return ptr;
     } else {
       PRINT_TRACE("  ...so we're trying to extend.\n");
@@ -540,17 +540,17 @@ void* arena_chunk_hdr::realloc(void* ptr, size_t size, size_t old_size) {
       // TODO: NEXT: Chunk may be growable
 
       // It's possible we're asking to extend off the end and should abort
-      pthread_mutex_lock(&chunk_lock);
+      lock();
       if (bin + new_size_pages > num_pages_allocated) {
 	PRINT_TRACE("  ...but we can't.\n");
-	pthread_mutex_unlock(&chunk_lock);
+	unlock();
 	return NULL;
       }
       int ii;
       for (ii = old_size_pages ; ii < new_size_pages ; ii++) {
 	if (page_map[bin + ii] != FREE) {
 	  PRINT_TRACE("  ..but we ran into something.\n");
-	  pthread_mutex_unlock(&chunk_lock);
+	  unlock();
 	  return NULL;
 	}
       }
@@ -560,7 +560,7 @@ void* arena_chunk_hdr::realloc(void* ptr, size_t size, size_t old_size) {
       for (ii = old_size_pages ; ii < new_size_pages ; ii++) {
 	page_map[bin + ii] = LARGE_RUN_FRAGMENT;
       }
-      pthread_mutex_unlock(&chunk_lock);
+      unlock();
       return ptr;
     }
   } else {
@@ -613,7 +613,7 @@ void* arena_chunk_hdr::fit_large_run(size_t consec_pages) {
   // 3. If you're *sure* you grew enough to fit, fit.
 
   // ** 1. If you have enough free pages, the attempt can be made **
-  pthread_mutex_lock(&chunk_lock);
+  lock();
   if (consec_pages <= num_pages_available) {
     PRINT_TRACE("   Making fit attempt, at least.\n");
     int consec = 0;
@@ -642,7 +642,7 @@ void* arena_chunk_hdr::fit_large_run(size_t consec_pages) {
 	    parent->unlock();
 	  }
 	  // This returns the *address* for use.
-	  pthread_mutex_unlock(&chunk_lock);
+	  unlock();
 	  return (new_address + LARGE_RUN_HDR_SIZE);
 	}
       } else {
@@ -695,12 +695,12 @@ void* arena_chunk_hdr::fit_large_run(size_t consec_pages) {
       tree_remove(&(parent->normal_chunks), (node_t*)this);
       parent->unlock();
     }
-    pthread_mutex_unlock(&chunk_lock);
+    unlock();
     return (new_address + LARGE_RUN_HDR_SIZE);
 
   } else {
     PRINT_TRACE("  ...but this chunk can't fit it even by growing (currently %zu pages).\n", this->num_pages_allocated);
-    pthread_mutex_unlock(&chunk_lock);
+    unlock();
     return NULL;
   }
 }
@@ -712,7 +712,7 @@ small_run_hdr* arena_chunk_hdr::carve_small_run(arena_bin* owner) {
 
   size_t consec_pages = owner->run_length / PAGE_SIZE;
 
-  pthread_mutex_lock(&chunk_lock);
+  lock();
   
   if (consec_pages < num_pages_available) {
     // We can at least try to fit
@@ -742,7 +742,7 @@ small_run_hdr* arena_chunk_hdr::carve_small_run(arena_bin* owner) {
 	  owner->run_available((node_t*) new_page);
 	  num_pages_available -= consec_pages;
 	  // This returns the *run* for use.
-	  pthread_mutex_unlock(&chunk_lock);
+	  unlock();
 	  return new_page;
 	}
       } else {
@@ -774,12 +774,12 @@ small_run_hdr* arena_chunk_hdr::carve_small_run(arena_bin* owner) {
     new_page->finalize();
     owner->run_available((node_t*) new_page);
     num_pages_available -= consec_pages;
-    pthread_mutex_unlock(&chunk_lock);
+    unlock();
     return new_page;
 
   } else {
     PRINT_TRACE("   Even a grown chunk won't fit this; try somewhere else.\n");
-    pthread_mutex_unlock(&chunk_lock);
+    unlock();
     return NULL;
   }
   
