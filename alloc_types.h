@@ -283,7 +283,7 @@ class arena_chunk_hdr {
   uint8_t page_map[(FINAL_CHUNK_SIZE / PAGE_SIZE)]; // Stores state of each page
   // Note above - header data occupies the first free page slot.
 
-  // private:
+ private:
   pthread_mutex_t chunk_lock;
 
   // ** Methods **
