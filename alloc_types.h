@@ -19,7 +19,7 @@
 
 // Currently, let's always use DEBUG_PRINT_TRACE if DEBUG is set
 #ifdef DEBUG
-#define DEBUG_PRINT_TRACE
+//#define DEBUG_PRINT_TRACE
 #endif
 
 #ifdef DEBUG_PRINT_TRACE
@@ -28,9 +28,9 @@
 #define PRINT_TRACE(...) do {} while(0);// Do nothing
 #endif
 
-/**************
- * Finalizers *
- **************/
+/*****************
+ * On Finalizers *
+ *****************/
 
 // Our many awesome control structures must be created on the stack,
 // then written to the heap. This means no pointer initialization during 
@@ -87,7 +87,7 @@ struct huge_run_hdr;
 // there is only one arena. Note: We have a slackness of 10 pages.
 // We therefore assign an initial size just under the slackness.
 // Constraint: Initial chunk size MUST BE FINAL_CHUNK_SIZE / 2^n
-#define INITIAL_CHUNK_SIZE (8 * PAGE_SIZE) // 32 kB
+#define INITIAL_CHUNK_SIZE (64 * PAGE_SIZE) // 32 kB
 #define INITIAL_CHUNK_PAGES (INITIAL_CHUNK_SIZE / PAGE_SIZE)
 // Maximum chunk size; maximum size given to an arena
 #define FINAL_CHUNK_SIZE (64 * PAGE_SIZE) // 256 kB
@@ -155,20 +155,33 @@ const uint8_t SMALL_CLASS_RUN_PAGE_USAGE[NUM_SMALL_CLASSES] =
 // Defined first because so many things care what size it is.
 // Other structures are defined in descending size order.
 
-struct arena_bin {
+class arena_bin {
+
+  // ** Member Data ** 
+ public:
   arena_hdr* parent;
-  pthread_mutex_t bin_lock; // Must be taken out to create or free chunks, or to do HUGE allocations
   small_run_hdr* current_run; // Pointer to header of current run
   tree_t available_runs; // RB tree of all runs with free space
   size_t object_size; // Size of object stored here, e.g. 192 bytes
   size_t run_length; // Total size of run, e.g. one page
   size_t available_registrations; // How many objects fit in a run of length run_length
 
+ private:
+  // Internal locks, accessed through external methods lock and unlock
+  pthread_mutex_t bin_lock; // Must be taken out to create or free chunks, or to do HUGE allocations
+
+
+  // ** Methods **
+ public:
   // Constructor
   arena_bin(); // "Decoy constructor"
   arena_bin(arena_hdr* parent, size_t _object_size, size_t num_pages);
   // Finalizer - once this is heaped
   void finalize();
+
+  // Manipulate locks
+  inline void lock() { pthread_mutex_lock(&bin_lock); }
+  inline void unlock() { pthread_mutex_unlock(&bin_lock); }
 
   // Internal consistency checker
   int check();
@@ -179,6 +192,9 @@ struct arena_bin {
   void run_available(node_t* avail_run);
   // Signal that a run is filled and should be dropped from the tree
   void filled_run(node_t* full_run);
+
+ private:
+  inline void lock_init() { pthread_mutex_init(&bin_lock, NULL); }
 
 };
 
@@ -191,14 +207,21 @@ struct arena_bin {
  * Arena *
  *********/
 
-struct arena_hdr {
-  pthread_mutex_t arena_lock;
+class arena_hdr {
+  // ** Member Data **
+ public:
   tree_t normal_chunks; // rb tree of chunks that have large/small metadata
                                  // and that still have available space
+  
+ private:
+  pthread_mutex_t arena_lock;
   size_t* deepest; // Points to the deepest chunk or huge run allocated
   size_t* free_list; // Points to a free list of chunks
   arena_bin bin_headers[NUM_SMALL_CLASSES]; // Store run metadata
 
+
+  // ** Methods **
+ public:
   // Constructor
   arena_hdr();
   // Some parts of construction can only be done once this is heapified, since they
@@ -211,6 +234,11 @@ struct arena_hdr {
   void* malloc(size_t size);
   void free(void* ptr);
   void* realloc(void* ptr, size_t size, size_t old_size);
+
+  // Lock management
+  inline void lock() { pthread_mutex_lock(&arena_lock); }
+  inline void unlock() { pthread_mutex_unlock(&arena_lock); }
+
   // Determine size of an allocation
   size_t size_of_alloc(void* ptr);
 
@@ -223,6 +251,10 @@ struct arena_hdr {
   // Grow a normal chunk to take up more space
   size_t grow(arena_chunk_hdr* chunk);
   size_t grow_max(arena_chunk_hdr* chunk);
+
+ private:
+  inline void lock_init() { pthread_mutex_init(&arena_lock, NULL); }
+
 };
 
 /****************
@@ -240,22 +272,31 @@ struct arena_hdr {
 #define SMALL_RUN_HEADER 4
 #define SMALL_RUN_FRAGMENT 5
 
-struct arena_chunk_hdr {
+class arena_chunk_hdr {
+  // ** Member Data **
+ public:
   node_t chunk_tree_node; // Allows this to be part of an rbtree of runs for small/large assignments
-  pthread_mutex_t chunk_lock;
   arena_hdr* parent; // Ptr to Arena
   size_t num_pages_available;
   size_t num_pages_allocated; // INITIAL_CHUNK_SIZE <= this <= FINAL_CHUNK_SIZE
                                        // ...but don't forget the first page is the header
-  // TODO: This tree is currently unused
-  tree_t clean_page_runs; // For clean *whole pages* for Large allocation
   uint8_t page_map[(FINAL_CHUNK_SIZE / PAGE_SIZE)]; // Stores state of each page
   // Note above - header data occupies the first free page slot.
+
+ private:
+  pthread_mutex_t chunk_lock;
+
+  // ** Methods **
+ public:
   // Constructor
   arena_chunk_hdr(arena_hdr* _parent);
   void finalize();
   // Internal consistency checker
   int check();
+
+  // Lock manipulation
+  inline void lock() { pthread_mutex_lock(&chunk_lock); }
+  inline void unlock() { pthread_mutex_unlock(&chunk_lock); }
 
   // It can't malloc directly, but it does have free and realloc responsibilities
   void free(void* ptr);
@@ -273,6 +314,10 @@ struct arena_chunk_hdr {
   // Converter routines between page index and page address
   inline byte* get_page_location(size_t page_no);
   inline size_t get_page_index(byte* page_addr);
+
+ private:
+  inline void lock_init() { pthread_mutex_init(&chunk_lock, NULL); }
+
 };
 
 
@@ -282,12 +327,15 @@ struct arena_chunk_hdr {
 
 // Header entry for a small run, at the top of its page
 struct small_run_hdr {
+  // ** Member Data **
   node_t run_tree_node; // Allows this to be part of a rbtree of runs
   //pthread_mutex_t small_run_lock;
   arena_bin* parent; // Pointer to our parent bin
   size_t* free_list; // Pointer to start block of free list
   size_t* next; // Pointer to first *never-allocated* block
   size_t free_cells; // How many free cells remain
+
+  // ** Methods **
   // Constructor
   small_run_hdr(arena_bin* _parent);
   // Finalizer
