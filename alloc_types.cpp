@@ -142,6 +142,7 @@ void* arena_hdr::malloc(size_t size) {
       PRINT_TRACE("    head at %p\n", prev);
       size_t * curr = *(size_t**)free_list;
       PRINT_TRACE("    next element at %p\n", curr);
+      PRINT_TRACE("    difference is %lu, and it is initial_chunk_size=%lu?%d\n", (size_t)(curr - prev), CHUNK_SIZE, (size_t)(curr - prev) == CHUNK_SIZE);
 
       // The pointer to the beginnning of contiguous free chunks
       size_t * beg_cont_free_chunks = (size_t*)free_list;
@@ -152,7 +153,7 @@ void* arena_hdr::malloc(size_t size) {
       // we find the necessary amount of contiguous free chunks
       // to place our huge allocation in
       while ((curr != NULL) && (num_contiguous_chunks < num_chunks)) {
-        if (curr - prev == INITIAL_CHUNK_SIZE) {
+        if ((size_t)(curr - prev) == CHUNK_SIZE) {
         PRINT_TRACE("    We found two contiguous chunks at addresses %p and %p\n", prev, curr);
           // curr and prev pointer are spaced exactly one chunk size apart
           // so they are contiguous
