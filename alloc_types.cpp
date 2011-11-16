@@ -138,9 +138,9 @@ void* arena_hdr::malloc(size_t size) {
       size_t num_contiguous_chunks = 1;
 
       size_t * prev = (size_t*)free_list;
-      PRINT_TRACE("head at %p\n", prev);
+      PRINT_TRACE("    head at %p\n", prev);
       size_t * curr = *(size_t**)free_list;
-      PRINT_TRACE("next element at %p\n", curr);
+      PRINT_TRACE("    next element at %p\n", curr);
 
       // The pointer to the beginnning of contiguous free chunks
       size_t * beg_cont_free_chunks = (size_t*)free_list;
@@ -152,7 +152,7 @@ void* arena_hdr::malloc(size_t size) {
       // to place our huge allocation in
       while ((curr != NULL) && (num_contiguous_chunks < num_chunks)) {
         if (curr - prev == INITIAL_CHUNK_SIZE) {
-        PRINT_TRACE("We found two contiguous chunks at addresses %p and %p\n", prev, curr);
+        PRINT_TRACE("    We found two contiguous chunks at addresses %p and %p\n", prev, curr);
           // curr and prev pointer are spaced exactly one chunk size apart
           // so they are contiguous
           num_contiguous_chunks += 1;
@@ -170,24 +170,24 @@ void* arena_hdr::malloc(size_t size) {
       if (num_contiguous_chunks == num_chunks) {
         // We found the perfect spot in the free_list to place our huge allocation in
         new_address = beg_cont_free_chunks;
-        PRINT_TRACE("We found the perfect spot in the free list to place our huge allocation in at %p\n", new_address);
+        PRINT_TRACE("    We found the perfect spot in the free list to place our huge allocation in at %p\n", new_address);
         
         // Now we need to update the free list
         // Start again from the head of the free_list
         // and iterate until you find the address
-        PRINT_TRACE("Now cleaning up the free list\n");
+        PRINT_TRACE("  Now cleaning up the free list\n");
         size_t * succ = *(size_t**)free_list;
         size_t * pred = (size_t*)free_list;
 
         // If the new address is the head of the free_list,
         // prev pointer becomes the head of the free_list
         if (pred == new_address) {
-        PRINT_TRACE("The head of the list=%p, new_address=%p\n", pred, new_address);
-        PRINT_TRACE("At the same location? %d\n", pred==new_address);
+        PRINT_TRACE("    The head of the list=%p, new_address=%p\n", pred, new_address);
+        PRINT_TRACE("    At the same location? %d\n", pred==new_address);
           pred = prev;
-        PRINT_TRACE("OK, so pred=%p, prev=%p, *pred=%p, *prev=%p\n", pred, prev, *pred, *prev);
+        PRINT_TRACE("    OK, so pred=%p, prev=%p, *pred=%p, *prev=%p\n", pred, prev, *pred, *prev);
           if (*((size_t*)pred) == NULL) {
-            PRINT_TRACE("The free list should be empty\n");
+            PRINT_TRACE("    The free list should be empty\n");
             free_list = NULL;
           }
         } else {
