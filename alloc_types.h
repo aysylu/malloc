@@ -87,7 +87,6 @@ struct huge_run_hdr;
 // there is only one arena. Note: We have a slackness of 10 pages.
 // We therefore assign an initial size just under the slackness.
 // Constraint: Initial chunk size MUST BE FINAL_CHUNK_SIZE / 2^n
-#define CHUNK_SIZE (8 * PAGE_SIZE) // 32 kB
 #define INITIAL_CHUNK_SIZE (64 * PAGE_SIZE) // 256 kB
 #define INITIAL_CHUNK_PAGES (INITIAL_CHUNK_SIZE / PAGE_SIZE)
 // Maximum chunk size; maximum size given to an arena

@@ -122,6 +122,7 @@ void* arena_hdr::malloc(size_t size) {
 
     // ** Use Huge Mode **
     void * new_address = NULL;
+    void * new_heap = NULL;
     // If you're doing a huge allocation, you require the arena-level
     // mutex, period.
     lock(); // Use own lock method
@@ -141,8 +142,11 @@ void* arena_hdr::malloc(size_t size) {
       size_t * prev = (size_t*)free_list;
       PRINT_TRACE("    head at %p\n", prev);
       size_t * curr = *(size_t**)free_list;
+      if (curr == NULL) {
+        PRINT_TRACE("   NOOOOOOOOOOOOOO\n");
+      }
       PRINT_TRACE("    next element at %p\n", curr);
-      PRINT_TRACE("    difference is %lu, and it is initial_chunk_size=%lu?%d\n", (size_t)(curr - prev), CHUNK_SIZE, (size_t)(curr - prev) == CHUNK_SIZE);
+      PRINT_TRACE("    difference is %lu, and it is initial_chunk_size=%lu? %d\n", (byte *)curr - (byte *)prev, FINAL_CHUNK_SIZE, (byte *)curr - (byte *)prev == FINAL_CHUNK_SIZE);
 
       // The pointer to the beginnning of contiguous free chunks
       size_t * beg_cont_free_chunks = (size_t*)free_list;
@@ -153,7 +157,7 @@ void* arena_hdr::malloc(size_t size) {
       // we find the necessary amount of contiguous free chunks
       // to place our huge allocation in
       while ((curr != NULL) && (num_contiguous_chunks < num_chunks)) {
-        if ((size_t)(curr - prev) == CHUNK_SIZE) {
+        if ((byte *)curr - (byte *)prev == FINAL_CHUNK_SIZE) {
         PRINT_TRACE("    We found two contiguous chunks at addresses %p and %p\n", prev, curr);
           // curr and prev pointer are spaced exactly one chunk size apart
           // so they are contiguous
@@ -165,39 +169,61 @@ void* arena_hdr::malloc(size_t size) {
           beg_cont_free_chunks = curr;        // move the beginning of contiguous chunks
         }
         
-	prev = curr;
+	prev = (size_t *) curr;
 	curr = (size_t *) *curr;
       }
 
       if (num_contiguous_chunks == num_chunks) {
         // We found the perfect spot in the free_list to place our huge allocation in
-        new_address = beg_cont_free_chunks;
-        PRINT_TRACE("    We found the perfect spot in the free list to place our huge allocation in at %p\n", new_address);
+        new_heap = beg_cont_free_chunks;
+        PRINT_TRACE("    We found the perfect spot in the free list to place our huge allocation in at %p\n", new_heap);
+        // Write a new huge_run_hdr into the new space.
+        *(huge_run_hdr*)new_heap = huge_run_hdr(size, num_chunks);
+        // Take note of the deepst object assigned
+        deepest = (size_t*)new_heap;
+        // OK, header in place - let's give them back the pointer, skipping the header
+        new_address = ((byte*) new_heap + HUGE_RUN_HDR_SIZE);
+        PRINT_TRACE("    The actual allocation at the address%p\n", new_address);
         
         // Now we need to update the free list
         // Start again from the head of the free_list
         // and iterate until you find the address
         PRINT_TRACE("  Now cleaning up the free list\n");
-        size_t * succ = *(size_t**)free_list;
         size_t * pred = (size_t*)free_list;
+        size_t * succ = *(size_t**)free_list;
 
         // If the new address is the head of the free_list,
         // prev pointer becomes the head of the free_list
-        if (pred == new_address) {
-        PRINT_TRACE("    The head of the list=%p, new_address=%p\n", pred, new_address);
-        PRINT_TRACE("    At the same location? %d\n", pred==new_address);
+        if (pred == new_heap) {
+        PRINT_TRACE("    Our new heap is the head of the free_list\n");
+        PRINT_TRACE("    The head of the list=%p, new_heap=%p\n", pred, new_heap);
           pred = prev;
         PRINT_TRACE("    OK, so pred=%p, prev=%p, *pred=%p, *prev=%p\n", pred, prev, *pred, *prev);
           if (*((size_t*)pred) == NULL) {
             PRINT_TRACE("    The free list should be empty\n");
             free_list = NULL;
-          }
+          } else {
+            PRINT_TRACE("    The list has more elements\n");
+            free_list = *(size_t **)prev;
+            PRINT_TRACE("    The new head of the free_list is at %p, next is %p\n", free_list, *(size_t **)free_list);
+/*            while ((pred != NULL) && (succ != new_heap)) {
+	      pred = succ;
+	      succ = (size_t *) *succ;
+              PRINT_TRACE("    Current pred=%p, succ=%p\n");
+            }
+            if (succ == new_heap) {
+              PRINT_TRACE("Need to handle this case\n");
+              *(size_t **)(pred) = (size_t *)prev;
+            }*/
+          } 
         } else {
-          while ((succ != NULL) && (succ != new_address)) {
+          while ((succ != NULL) && (succ != new_heap)) {
 	    pred = succ;
 	    succ = (size_t *) *succ;
+            PRINT_TRACE("    Current pred=%p, succ=%p\n");
           }
-          if (succ == new_address) {
+          if (succ == new_heap) {
+            PRINT_TRACE("Need to handle this case\n");
             *(size_t **)(pred) = (size_t *)prev;
           }
         } 
@@ -313,7 +339,7 @@ void arena_hdr::free(void* ptr) {
     // OK, now we can get freeing! Iteratively add freed chunks to the free list
     // We keep the free list sorted for contiguity checks. 
     // Assemble the free list links
-    PRINT_TRACE(" Writing %zu internal headers.\n", (header->num_chunks -1));
+    PRINT_TRACE(" Writing %lu internal headers.\n", (header->num_chunks -1));
     internally_link_chunks((size_t*)header, 0, header->num_chunks);
     // Also, save the first link target and last link site to help us
     // The first chunk link address is just the header
@@ -324,6 +350,14 @@ void arena_hdr::free(void* ptr) {
       // Attach out segment to the free list
       free_list = (size_t*)header;
       *last_chunk_link_site = NULL;
+      
+      size_t * test = (size_t*)free_list;
+      while (test != NULL) {
+        PRINT_TRACE("test is %p\n", test);
+        test = (size_t *) *test;
+      }
+        PRINT_TRACE("test is %p\n", test);
+      
     } else {
       PRINT_TRACE(" Hey, we already have a free list!\n");
       size_t * curr = *(size_t**)free_list;
