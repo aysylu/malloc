@@ -635,11 +635,14 @@ void* arena_chunk_hdr::fit_large_run(size_t consec_pages) {
 	  *(large_run_hdr*)new_address = large_run_hdr(consec_pages);
 	  num_pages_available -= consec_pages;
 	  if ((num_pages_available == 0) && (num_pages_allocated == FINAL_CHUNK_PAGES)) {
-	    parent->lock();
+	    // Actually, this already owns the parent lock. It's inefficient but it's
+	    // not buggy. TODO: Resolve.
+	    // parent->lock();
 	    PRINT_TRACE("--Chunk is definitely full--\n");
 	    assert(tree_search(&(parent->normal_chunks), (node_t*)this) != NULL);
 	    tree_remove(&(parent->normal_chunks), (node_t*)this);
-	    parent->unlock();
+	    // See above
+	    // parent->unlock();
 	  }
 	  // This returns the *address* for use.
 	  unlock();
