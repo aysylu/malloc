@@ -130,27 +130,18 @@ void* arena_hdr::malloc(size_t size) {
     size_t num_chunks = get_num_chunks(size);
     PRINT_TRACE(" Number of chunks is %lu\n", num_chunks);
     if (free_list != NULL) {
-      // TODO: Try to pull something from the free list
-      // TODO: We currently don't have a free list for chunks
-      // Later we'll have a structure that coalesces chunks
-      // and uses them to allocate huge objects
+      // Try to pull something from the free list
       PRINT_TRACE(" The free list has some space; try to pull something from the free list\n");
       // Try to find space to place this allocation
       // Traverse the free list to find if there's a contiguous block of chunks
       size_t num_contiguous_chunks = 1;
 
       size_t * prev = (size_t*)free_list;
-      PRINT_TRACE("    head at %p\n", prev);
       size_t * curr = *(size_t**)free_list;
-      if (curr == NULL) {
-        PRINT_TRACE("   NOOOOOOOOOOOOOO\n");
-      }
-      PRINT_TRACE("    next element at %p\n", curr);
-      PRINT_TRACE("    difference is %lu, and it is initial_chunk_size=%lu? %d\n", (byte *)curr - (byte *)prev, FINAL_CHUNK_SIZE, (byte *)curr - (byte *)prev == FINAL_CHUNK_SIZE);
 
       // The pointer to the beginnning of contiguous free chunks
       size_t * beg_cont_free_chunks = (size_t*)free_list;
-      PRINT_TRACE(" Traversing the list to find contiguous free chunks\n");
+      PRINT_TRACE("   Traversing the list to find contiguous free chunks\n");
 
       // Iterate over the free_list until
       // we either run off the end of the list OR
@@ -158,7 +149,7 @@ void* arena_hdr::malloc(size_t size) {
       // to place our huge allocation in
       while ((curr != NULL) && (num_contiguous_chunks < num_chunks)) {
         if ((byte *)curr - (byte *)prev == FINAL_CHUNK_SIZE) {
-        PRINT_TRACE("    We found two contiguous chunks at addresses %p and %p\n", prev, curr);
+        PRINT_TRACE("      We found two contiguous chunks at addresses %p and %p\n", prev, curr);
           // curr and prev pointer are spaced exactly one chunk size apart
           // so they are contiguous
           num_contiguous_chunks += 1;
@@ -183,7 +174,7 @@ void* arena_hdr::malloc(size_t size) {
         deepest = (size_t*)new_heap;
         // OK, header in place - let's give them back the pointer, skipping the header
         new_address = ((byte*) new_heap + HUGE_RUN_HDR_SIZE);
-        PRINT_TRACE("    The actual allocation at the address%p\n", new_address);
+        PRINT_TRACE("    The actual allocation is at the address %p\n", new_address);
         
         // Now we need to update the free list
         // Start again from the head of the free_list
@@ -196,34 +187,22 @@ void* arena_hdr::malloc(size_t size) {
         // prev pointer becomes the head of the free_list
         if (pred == new_heap) {
         PRINT_TRACE("    Our new heap is the head of the free_list\n");
-        PRINT_TRACE("    The head of the list=%p, new_heap=%p\n", pred, new_heap);
           pred = prev;
-        PRINT_TRACE("    OK, so pred=%p, prev=%p, *pred=%p, *prev=%p\n", pred, prev, *pred, *prev);
           if (*((size_t*)pred) == NULL) {
             PRINT_TRACE("    The free list should be empty\n");
             free_list = NULL;
           } else {
-            PRINT_TRACE("    The list has more elements\n");
+            PRINT_TRACE("    The free list has more elements\n");
             free_list = *(size_t **)prev;
-            PRINT_TRACE("    The new head of the free_list is at %p, next is %p\n", free_list, *(size_t **)free_list);
-/*            while ((pred != NULL) && (succ != new_heap)) {
-	      pred = succ;
-	      succ = (size_t *) *succ;
-              PRINT_TRACE("    Current pred=%p, succ=%p\n");
-            }
-            if (succ == new_heap) {
-              PRINT_TRACE("Need to handle this case\n");
-              *(size_t **)(pred) = (size_t *)prev;
-            }*/
+            PRINT_TRACE("    The new head of the free_list is now at %p\n", free_list);
           } 
         } else {
           while ((succ != NULL) && (succ != new_heap)) {
 	    pred = succ;
 	    succ = (size_t *) *succ;
-            PRINT_TRACE("    Current pred=%p, succ=%p\n");
           }
           if (succ == new_heap) {
-            PRINT_TRACE("Need to handle this case\n");
+            PRINT_TRACE("Need to handle this case: succ=%p, new_heap=%p\n", succ, new_heap);
             *(size_t **)(pred) = (size_t *)prev;
           }
         } 
@@ -350,14 +329,6 @@ void arena_hdr::free(void* ptr) {
       // Attach out segment to the free list
       free_list = (size_t*)header;
       *last_chunk_link_site = NULL;
-      
-      size_t * test = (size_t*)free_list;
-      while (test != NULL) {
-        PRINT_TRACE("test is %p\n", test);
-        test = (size_t *) *test;
-      }
-        PRINT_TRACE("test is %p\n", test);
-      
     } else {
       PRINT_TRACE(" Hey, we already have a free list!\n");
       size_t * curr = *(size_t**)free_list;
