@@ -164,6 +164,9 @@ void* arena_hdr::malloc(size_t size) {
 	curr = (size_t *) *curr;
       }
 
+      // After the while loop exits, prev is a pointer
+      // to a chunk after the current allocation
+
       if (num_contiguous_chunks == num_chunks) {
         // We found the perfect spot in the free_list to place our huge allocation in
         new_heap = beg_cont_free_chunks;
@@ -193,45 +196,54 @@ void* arena_hdr::malloc(size_t size) {
             free_list = NULL;
           } else {
             PRINT_TRACE("    The free list has more elements\n");
+            // the head of the linked free list becomes the chunk following the newly allocated chunk
             free_list = *(size_t **)prev;
             PRINT_TRACE("    The new head of the free_list is now at %p\n", free_list);
           } 
         } else {
+          PRINT_TRACE("    Our new heap is in the middle of the free_list\n");
           while ((succ != NULL) && (succ != new_heap)) {
 	    pred = succ;
 	    succ = (size_t *) *succ;
           }
           if (succ == new_heap) {
-            PRINT_TRACE("Need to handle this case: succ=%p, new_heap=%p\n", succ, new_heap);
+            // The free list now connects chunks that come before the allocation and after 
             *(size_t **)(pred) = (size_t *)prev;
+            PRINT_TRACE("    Updated the free list\n");
+          } else {
+            // This case should never happen:
+            // IF the new heap for huge allocations is not at the beginning of the free list
+            // AND we couldn't find it in the free list
+            // THEN something really bad happened
+            PRINT_TRACE("!!!Something really terrible happened; you should never get here!!!\n");
           }
         } 
       } else {
         // There were no contiguous free chunks that would fit our huge allocation
-        // TODO: Handle the same we would handle it if the free_list was empty
-      // Uh-oh. The free list couldn't help us. This needs a *new chunk*.
-      // Arena is going to demand new space on the heap! Single thread, everything fine.
-      PRINT_TRACE(" Creating a new chunk for this allocation.\n");
-      // A point of care: It may be the case that we have an ungrown arena chunk
-      // on top right now. We need to align the new chunk on top of that.
-      if ((mem_heapsize() - ARENA_HDR_SIZE) % FINAL_CHUNK_SIZE) {
+        // Handle the same we would handle it if the free_list was empty
+        // Uh-oh. The free list couldn't help us. This needs a *new chunk*.
+        // Arena is going to demand new space on the heap! Single thread, everything fine.
+        PRINT_TRACE(" We couldn't find space in the free list. Creating a new chunk for this allocation.\n");
+        // A point of care: It may be the case that we have an ungrown arena chunk
+        // on top right now. We need to align the new chunk on top of that.
+        if ((mem_heapsize() - ARENA_HDR_SIZE) % FINAL_CHUNK_SIZE) {
         // Allocate heap up to the next chunk boundary. If we got here, this is a small run.
-        grow_max((arena_chunk_hdr*)deepest);
-      }
-      void* new_heap = mem_sbrk(num_chunks * FINAL_CHUNK_SIZE);
-      PRINT_TRACE(" Increased the heap by %lu\n", num_chunks * FINAL_CHUNK_SIZE);
-      assert(new_heap != NULL);
-      // Write a new huge_run_hdr into the new space.
-      *(huge_run_hdr*)new_heap = huge_run_hdr(size, num_chunks);
-      // Take note of the deepst object assigned
-      deepest = (size_t*)new_heap;
-      // OK, header in place - let's give them back the pointer, skipping the header
-      new_address = ((byte*) new_heap + HUGE_RUN_HDR_SIZE);
-      }
+          grow_max((arena_chunk_hdr*)deepest);
+        }
+        void* new_heap = mem_sbrk(num_chunks * FINAL_CHUNK_SIZE);
+        PRINT_TRACE(" Increased the heap by %lu\n", num_chunks * FINAL_CHUNK_SIZE);
+        assert(new_heap != NULL);
+        // Write a new huge_run_hdr into the new space.
+        *(huge_run_hdr*)new_heap = huge_run_hdr(size, num_chunks);
+        // Take note of the deepst object assigned
+        deepest = (size_t*)new_heap;
+        // OK, header in place - let's give them back the pointer, skipping the header
+        new_address = ((byte*) new_heap + HUGE_RUN_HDR_SIZE);
+     }
     } else {
       // Uh-oh. The free list couldn't help us. This needs a *new chunk*.
       // Arena is going to demand new space on the heap! Single thread, everything fine.
-      PRINT_TRACE(" Creating a new chunk for this allocation.\n");
+      PRINT_TRACE(" There's no free list. Creating a new chunk for this allocation.\n");
       // A point of care: It may be the case that we have an ungrown arena chunk
       // on top right now. We need to align the new chunk on top of that.
       if ((mem_heapsize() - ARENA_HDR_SIZE) % FINAL_CHUNK_SIZE) {
