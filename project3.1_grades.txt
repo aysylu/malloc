@@ -1,0 +1,8 @@
+== Project 3.1 grades ==
+
+Group: aysylu-daigohji
+Performance (out of 10): 9.637670558
+Correctness (out of 5): 5
+Validator (out of 5): 5
+Total (out of 20): 19.63767056
+
