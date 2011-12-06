@@ -1,23 +1,23 @@
 == Project 3.2 beta grades ==
 
 Group: aysylu-daigohji
-Correctness (out of 5): 5.0
-Performance (out of 15): 10.5305108344
-Total (out of 20): 15.5305108344
+Correctness (out of 5): 5
+Performance (out of 15): 10.53051083
+Total (out of 20): 15.53051083
 
 == Benchmark performance score ==
 
-./cache-scratch 1 1000 8 1000000      0.64967606833
+./cache-scratch 1 1000 8 1000000        0.649676068
 ./cache-scratch 12 1000 8 1000000               0.6
-./cache-thrash 1 1000 8 1000000      0.999370005478
+./cache-thrash 1 1000 8 1000000         0.999370005
 ./cache-thrash 12 1000 8 1000000                0.6
-./growvector 1 100000 8               0.97813546426
-./growvector 12 100000 8             0.685991309223
+./growvector 1 100000 8                 0.978135464
+./growvector 12 100000 8                0.685991309
 ./larson 10 7 16 1000 10000 6172 12             0.6
 ./larson 10 7 8 1000 10000 6172 12              0.6
-./linux-scalability 8 10000000 1     0.727284639247
-./linux-scalability 8 10000000 12    0.666926521523
-./linux-scalability 999 10000000 12  0.614990603807
+./linux-scalability 8 10000000 1        0.727284639
+./linux-scalability 8 10000000 12       0.666926522
+./linux-scalability 999 10000000 12     0.614990604
 
 == Statistics ==
 
